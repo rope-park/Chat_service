@@ -1,0 +1,53 @@
+# ====== C 언어 빌드 산출물 ======
+# 개별 오브젝트 파일
+*.o
+
+# Makefile이 생성하는 임시파일
+*.d
+# core dump
+core
+# valgrind 리포트
+vgcore.*
+
+# ====== 데이터베이스 ======
+# SQLite DB 파일
+*.db
+*.sqlite3
+
+# ====== 에디터/IDE 임시 파일 ======
+# Vim swap, backup
+*.swp
+*.swo
+*.swn
+*~
+# Emacs backup
+*~
+# IntelliJ, VSCode 등
+.vscode/
+.idea/
+*.code-workspace
+
+# ====== 로그 파일 ======
+*.log
+
+# ====== React/TypeScript(PWA) ======
+# 빌드 출력물
+node_modules/
+build/
+dist/
+.cache/
+.next/
+# 환경 설정 파일 (API 키 등)
+.env
+.env.local
+.env.*.local
+
+# ====== macOS ======
+.DS_Store
+
+# ====== 기타 ======
+# 테스트 커버리지 리포트
+coverage/
+# 임시 패키지 매니저 잠금 파일(원치 않을 경우 제외)
+package-lock.json
+yarn.lock
