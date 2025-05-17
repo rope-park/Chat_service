@@ -175,16 +175,29 @@ void server_user(void) {
 
 // 생성된 대화방 정보 출력 함수
 void server_room(void) {
-    printf("Room\tMembers\n");
-    printf("========================================================\n");
+    pthread_mutex_lock(&g_rooms_mutex);
 
-    for (int i = 0; i < room_num; i++) {
-        printf("%02d\t", rooms[i].no);
-        for (int j = 0; j < MAX_CLIENT && rooms[i].member[j]; j++) {
-            printf("%s ", rooms[i].member[j]->id);
+    printf("%4s\t%20s\t%8s\t%s\n", "ID", "ROOM NAME", "#USER", "MEMBER");
+    printf("=======================================================================\n");
+
+    // 대화방 목록을 순회하며 정보 출력
+    for (Room *r = g_rooms; r != NULL; r = r->next) {
+        printf("%4u\t%20s\t%8d\t",
+                r->no,               // 방 번호
+                r->room_name,        // 방 이름
+                r->member_count      // 방 참여자 수
+        );
+        for (int i = 0; i < r->member_count; i++) {
+            if (r->members[i]) {
+                printf("%s", r->members[i]->id);
+                if (i < r->member_count - 1) {
+                    printf(", ");
+                }
+            }
         }
         printf("\n");
     }
+    pthread_mutex_unlock(&g_rooms_mutex);
 }
 
 // 서버 종료 함수
