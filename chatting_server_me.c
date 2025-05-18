@@ -19,49 +19,8 @@
 #define BUFFER_SIZE     1024
 
 
-// =================== 구조체 ======================
-// User 구조체
-typedef struct User {
-    int sock;                           // 소켓 번호
-    char id[64];                        // 사용자 ID (닉네임)
-    pthread_t thread;                   // 사용자별 스레드
-    struct Room *room;                  // 대화방 포인터
-    struct User *next;                  // 다음 사용자 포인터
-    struct User *prev;                  // 이전 사용자 포인터
-    struct User *room_user_next;        // 대화방 내 사용자 포인터
-    struct User *room_user_prev;        // 대화방 내 사용자 포인터
-} User;
-
-// Room 구조체
-typedef struct Room {
-    char room_name[64];                 // 방 이름
-    unsigned int no;                    // 방 고유 번호
-    struct User *members[MAX_CLIENT];   // 방에 참여중인 멤버 목록
-    int member_count;                   // 생에 참여중인 멤버 수
-    struct Room *next;                  // 다음 방 포인터
-    struct Room *prev;                  // 이전 방 포인터
-    int created_time;                   // 생성된 시간
-} Room;
-
-// 서버 cmd 구조체
-typedef void (*server_cmd_func_t)(void);
-typedef struct {
-    const char          *cmd;       // 명령어 문자열
-    server_cmd_func_t   cmd_func;   // 해당 명령어 처리 함수
-    const char          *comment;   // 도움말 출력용 설명
-} server_cmd_t;
-
-// 클라이언트 cmd 구조체
-typedef void (*cmd_func_t)(User *user, char *args);
-typedef void (*usage_func_t)(User *user);
-typedef struct {
-    const char          *cmd;            // 명령어 문자열
-    cmd_func_t          cmd_func;        // 해당 명령어 처리 함수
-    usage_func_t        usage_func;      // 사용법 안내 함수
-    const char          *comment;        // 도움말 출력용 설명
-} client_cmd_t;
-
-
+typedef struct User User;
+typedef struct Room Room;
 // ==================== 기능 함수 선언 =====================
 // ======== 서버부 ========
 // ==== CLI ====
@@ -82,7 +41,6 @@ void list_add_room_unlocked(Room *room);
 void list_remove_room_unlocked(Room *room);
 Room *find_room_unlocked(const char *name);
 Room *find_room_by_id_unlocked(unsigned int id);
-Room *find_room_by_id(unsigned int id);
 
 void room_add_member_unlocked(Room *room, User *user);
 void room_remove_member_unlocked(Room *room, User *user);
@@ -110,7 +68,7 @@ void process_server_command(int epfd, int server_sock);
 void cmd_users(User *user);
 void cmd_rooms(int sock);
 void cmd_create(User *creator, const char *room_name);
-void cmd_join(User *user, const char *room_no_str)
+void cmd_join(User *user, const char *room_no_str);
 int cmd_join_wrapper(User *user, char *args);
 int cmd_leave(User *user, char *args);
 int cmd_help(User *user, char *args);
@@ -119,6 +77,30 @@ void usage_create(User *user);
 void usage_join(User *user);
 void usage_leave(User *user);
 void usage_help(User *user);
+
+// =================== 구조체 ======================
+// User 구조체
+typedef struct User {
+    int sock;                           // 소켓 번호
+    char id[64];                        // 사용자 ID (닉네임)
+    pthread_t thread;                   // 사용자별 스레드
+    struct Room *room;                  // 대화방 포인터
+    struct User *next;                  // 다음 사용자 포인터
+    struct User *prev;                  // 이전 사용자 포인터
+    struct User *room_user_next;        // 대화방 내 사용자 포인터
+    struct User *room_user_prev;        // 대화방 내 사용자 포인터
+} User;
+
+// Room 구조체
+typedef struct Room {
+    char room_name[64];                 // 방 이름
+    unsigned int no;                    // 방 고유 번호
+    struct User *members[MAX_CLIENT];   // 방에 참여중인 멤버 목록
+    int member_count;                   // 생에 참여중인 멤버 수
+    struct Room *next;                  // 다음 방 포인터
+    struct Room *prev;                  // 이전 방 포인터
+    int created_time;                   // 생성된 시간
+} Room;
 
 
 // ================== 전역 변수 ===================
@@ -131,6 +113,26 @@ static unsigned int g_next_room_no = 1; // 다음 대화방 고유 번호
 // Mutex 사용하여 스레드 상호 배제를 통해 안전하게 처리
 pthread_mutex_t g_users_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t g_rooms_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+
+// 서버 cmd 구조체
+typedef void (*server_cmd_func_t)(void);
+typedef struct {
+    const char          *cmd;       // 명령어 문자열
+    server_cmd_func_t   cmd_func;   // 해당 명령어 처리 함수
+    const char          *comment;   // 도움말 출력용 설명
+} server_cmd_t;
+
+// 클라이언트 cmd 구조체
+typedef void (*cmd_func_t)(User *user, char *args);
+typedef void (*usage_func_t)(User *user);
+typedef struct {
+    const char          *cmd;            // 명령어 문자열
+    cmd_func_t          cmd_func;        // 해당 명령어 처리 함수
+    usage_func_t        usage_func;      // 사용법 안내 함수
+    const char          *comment;        // 도움말 출력용 설명
+} client_cmd_t;
+
 
 // command 테이블 (서버)
 server_cmd_t cmd_tbl_server[] = {
@@ -165,11 +167,11 @@ void server_user(void) {
     // 사용자 목록을 순회하며 정보 출력
     for (User *u = g_users; u != NULL; u = u->next) {
         // 사용자가 참여 중인 방 이름, 없으면 "Lobby"로 표시
-        const char *room_name = (u->room ? u->room->room_name : "Lobby");
+        const char *r = (u->room ? u->room->room_name : "Lobby");
         printf("%2d\t%16s\t%20s\n", 
                 u->sock,    // 소켓 번호
                 u->id,      // 사용자 ID
-                room_name   // 대화방 이름
+                r   // 대화방 이름
         );
     }
     pthread_mutex_unlock(&g_users_mutex);
@@ -632,20 +634,19 @@ void cmd_join(User *user, const char *room_no_str) {
     snprintf(success_msg, sizeof(success_msg), "[Server] Joined room '%s' (ID: %u).\n", target_room->room_name, target_room->no);
     safe_send(user->sock, success_msg);
     broadcast_to_room(target_room, user, "[Server] %s joined the room.\n", user->id);
+    return 0;
 }
 
 // typedef에서 warning: type allocation error 방지
-int cmd_enter_wrapper(User *user, char *args) {
+int cmd_join_wrapper(User *user, char *args) {
     char buf[256];
     if (!args) {
         usage_enter(user);
-        send(user->sock, buf, strlen(buf), 0);
         return -1;
     }
 
     int room_no = atoi(args);
-    return cmd_enter(user, room_no);
-}
+    return cmd_join(user, room_no);}
 
 // 현재 대화방 나가기 함수
 int cmd_exit(User *user, char *args) {
@@ -704,7 +705,6 @@ int cmd_exit(User *user, char *args) {
     return 0;
 }
 
-
 // 도움말 출력 함수
 int cmd_help(User *user, char *args) {
     char buf[512];
@@ -731,14 +731,14 @@ void usage_join(User *user) {
     safe_send(user->sock, msg);
 }
 
-void usage_exit(User *user) {
+void usage_leave(User *user) {
     char *msg = "Usage: /exit\n";
-    send(user->sock, msg, strlen(msg), 0);
+    safe_send(user->sock, msg);
 }
 
 void usage_help(User *user) {
     char *msg = "Usage: /help <command>\n";
-    send(user->sock, msg, strlen(msg), 0);
+    safe_send(user->sock, msg);
 }
 
 
