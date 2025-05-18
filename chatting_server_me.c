@@ -110,7 +110,7 @@ void process_server_command(int epfd, int server_sock);
 void cmd_users(User *user);
 void cmd_rooms(int sock);
 void cmd_create(User *creator, const char *room_name);
-int cmd_join(User *user, int room_no);
+void cmd_join(User *user, const char *room_no_str)
 int cmd_join_wrapper(User *user, char *args);
 int cmd_leave(User *user, char *args);
 int cmd_help(User *user, char *args);
@@ -593,54 +593,45 @@ void cmd_create(User *creator, const char *room_name) {
 }
 
 // 특정 대화방 참여 함수
-int cmd_enter(User *user, int room_no) {
-    char buf[128];
+void cmd_join(User *user, const char *room_no_str) {
+    // 대화방 이름 유효성 검사
+    if (!room_no_str || strlen(room_no_str) == 0) {
+        usage_join(user);
+        return -1;
+    }
+
+    // 대화방에 이미 참여 중인지 확인
+    if (user->room != NULL) {
+        safe_send(user->sock, "[Server] You are already in a room. Please /leave first.\n");
+        return -1;
+    }
+
+    char *endptr;
+    long num_id = strtol(room_no_str, &endptr, 10);
 
     // 대화방 번호 유효성 검사
-    if (room_no <= 0 || room_no > room_num) {
-        snprintf(buf, sizeof(buf), "Invalid room number.\n");
-        send(user->sock, buf, strlen(buf), 0);
+    if (*endptr != '\0' || num_id <= 0 || num_id >= g_next_room_no || num_id > 0xFFFFFFFF) {
+        safe_send(user->sock, "[Server] Invalid room ID. Please use a valid positive number.\n");
         return -1;
     }
 
-    roominfo_t *room = &rooms[room_no - 1];
+    unsigned int room_no_to_join = (unsigned int)num_id;
 
-    // 1:1 대화방인지 확인
-    if (strcmp(room->room_name, "1:1 chatroom") == 0) {
-        snprintf(buf, sizeof(buf), "This room is a 1:1 chat. You cannot join.\n");
-        send(user->sock, buf, strlen(buf), 0);
+    // 대화방 찾기
+    Room *target_room = find_room_by_id(room_no_to_join);
+    if (!target_room) {
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "[Server] Room with ID %u not found.\n", room_no_to_join);
+        safe_send(user->sock, error_msg);
         return -1;
     }
 
-    // 이미 해당 방에 들어가 있는지 확인
-    if (user->chat_room == room_no) {
-        snprintf(buf, sizeof(buf), "You are already in this room %s.\n", room->room_name);
-        send(user->sock, buf, strlen(buf), 0);
-        return -1;
-    }
-
-    // 이미 다른 방에 들어가 있는지 확인
-    if (user->chat_room != ROOM0) {
-        snprintf(buf, sizeof(buf), "If you want to enter another chat, leave your current room %d\n", user->chat_room);
-        send(user->sock, buf, strlen(buf), 0);
-        return -1;
-    }
-
-    // 대화방 참가
-    for (int i = 0; i < MAX_CLIENT; i++) {
-        if (room->member[i] == NULL) {
-            room->member[i] = user;
-            user->chat_room = room->no;
-            snprintf(buf, sizeof(buf), "Entered Chatroom %s\n", room->room_name);
-            send(user->sock, buf, strlen(buf), 0);
-            return 0;
-        }
-    }
-
-    // 대화방 인원 제한
-    snprintf(buf, sizeof(buf), "Room is full.\n");
-    send(user->sock, buf, strlen(buf), 0);
-    return -1;
+    room_add_member(target_room, user);
+    printf("[INFO] User %s joined room '%s' (ID: %u).\n", user->id, target_room->room_name, target_room->no);
+    char success_msg[BUFFER_SIZE];
+    snprintf(success_msg, sizeof(success_msg), "[Server] Joined room '%s' (ID: %u).\n", target_room->room_name, target_room->no);
+    safe_send(user->sock, success_msg);
+    broadcast_to_room(target_room, user, "[Server] %s joined the room.\n", user->id);
 }
 
 // typedef에서 warning: type allocation error 방지
@@ -735,9 +726,9 @@ void usage_create(User *user) {
     safe_send(user->sock, msg);
 }
 
-void usage_enter(User *user) {
-    char *msg = "Usage: /enter <room_no>\n";
-    send(user->sock, msg, strlen(msg), 0);
+void usage_join(User *user) {
+    char *msg = "Usage: /join <room_no>\n";
+    safe_send(user->sock, msg);
 }
 
 void usage_exit(User *user) {
