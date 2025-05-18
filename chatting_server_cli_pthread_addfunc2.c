@@ -1051,11 +1051,7 @@ int cmd_dm(userinfo_t *user, char *args) {
 }
 
 // 현재 대화방 나가기 함수
-<<<<<<< HEAD:chatting_server_cli_pthread_addfunc2.c
-int cmd_exit(userinfo_t *user, char *args) {
-=======
 int cmd_leave(User *user, char *args) {
->>>>>>> ffa4f57 (Feat: 동기화(Mutex) 래퍼 함수들 추가):chatting_server_me.c
     char buf[128];
     int current_room_no = user->chat_room;
     
