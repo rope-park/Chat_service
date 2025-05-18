@@ -124,6 +124,8 @@ void usage_help(User *user);
 // ================== 전역 변수 ===================
 static User *g_users = NULL; // 사용자 목록
 static Room *g_rooms = NULL; // 대화방 목록
+static int g_server_sock = -1; // 서버 소켓
+static int g_epdf = -1; // epoll 디스크립터
 static unsigned int g_next_room_no = 1; // 다음 대화방 고유 번호
 
 // Mutex 사용하여 스레드 상호 배제를 통해 안전하게 처리
@@ -202,8 +204,15 @@ void server_room(void) {
 
 // 서버 종료 함수
 void server_quit(void) {
-    printf("Disconnecting all clients...\n");
+    User *u, *next_u;
+    Room *r, *next_r;
 
+    printf("[INFO] Shutting down Server...\n");
+
+    close(g_server_sock); // 서버 소켓 종료
+
+    pthread_mutex_lock(&g_users_mutex);
+    // 사용자 목록을 순회하며 연결 종료
     for (int i = 0; i < client_num; i++) {
         if (users[i] && users[i]->is_conn) {
             close(users[i]->sock); // 클라이언트 소켓 종료
