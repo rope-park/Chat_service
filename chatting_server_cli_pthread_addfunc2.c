@@ -398,7 +398,15 @@ User *find_client_by_sock_unlocked(int sock) {
 
 // 사용자 ID로 검색 함수
 User *find_client_by_id_unlocked(const char *id) {
-
+    User *current = g_users;
+    // 사용자 목록을 순회하며 ID로 검색
+    while (current != NULL) {
+        if (strcmp(current->id, id) == 0) {
+            return current;
+        }
+        current = current->next;
+    }
+    return NULL;
 }
 
 // 대화방 추가 함수
