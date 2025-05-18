@@ -402,7 +402,16 @@ void list_add_room_unlocked(Room *room) {
 
 // 대화방 제거 함수
 void list_remove_room_unlocked(Room *room) {
-
+    if (room->prev != NULL) {
+        room->prev->next = room->next;
+    } else {
+        g_rooms = room->next;
+    }
+    if (room->next != NULL) {
+        room->next->prev = room->prev;
+    }
+    room->prev = NULL;
+    room->next = NULL;
 }
 
 // 대화방 검색 함수
