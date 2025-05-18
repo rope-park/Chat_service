@@ -385,7 +385,15 @@ void list_remove_client_unlocked(User *user) {
 
 // 사용자 검색 함수
 User *find_client_by_sock_unlocked(int sock) {
-
+    User *current = g_users;
+    // 사용자 목록을 순회하며 소켓 번호로 검색
+    while (current != NULL) {
+        if (current->sock == sock) {
+            return current;
+        }
+        current = current->next;
+    }
+    return NULL;
 }
 
 // 사용자 ID로 검색 함수
