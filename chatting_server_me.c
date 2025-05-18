@@ -213,16 +213,41 @@ void server_quit(void) {
 
     pthread_mutex_lock(&g_users_mutex);
     // 사용자 목록을 순회하며 연결 종료
-    for (int i = 0; i < client_num; i++) {
-        if (users[i] && users[i]->is_conn) {
-            close(users[i]->sock); // 클라이언트 소켓 종료
-            users[i]->is_conn = 0;
-            free(users[i]); // 메모리 해제
-            users[i] = NULL;
+    for (u = g_users; u != NULL; u = u->next) {
+        if (u->sock >= 0) {
+            shutdown(u->sock, SHUT_RDWR);
+            close(u->sock);
+            u->sock = -1;
         }
     }
-    printf("Server shutdown complete.\n");
-    exit(0);
+    pthread_mutex_unlock(&g_users_mutex);
+    
+    close(g_epdf); // epoll 디스크립터 종료
+
+    // 사용자 목록 메모리 해제
+    pthread_mutex_lock(&g_users_mutex);
+    u = g_users;
+    while (u) {
+        next_u = u->next;
+        free(u);
+        u = next_u;
+    }
+    g_users = NULL;
+    pthread_mutex_unlock(&g_users_mutex);
+
+    // 대화방 목록 메모리 해제
+    pthread_mutex_lock(&g_rooms_mutex);
+    r = g_rooms;
+    while (r) {
+        next_r = r->next;
+        free(r);
+        r = next_r;
+    }
+    g_rooms = NULL;
+    pthread_mutex_unlock(&g_rooms_mutex);
+
+    printf("[INFO] Server shutdown complete.\n");
+    exit(EXIT_SUCCESS);
 }
 
 // ==== 메시지 전송 ====
