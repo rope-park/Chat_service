@@ -554,32 +554,44 @@ void cmd_users(User *user) {
 
 // 대화방 목록 정보 출력 함수
 void cmd_rooms(int sock) {
-    char buf[512];
-    char line[128];
+    char room_list[BUFFER_SIZE];
+    room_list[0] = '\0';
+    strcat(room_list, "[Server] Available rooms: ");
 
-    if (room_num == 0) {
-        snprintf(buf, sizeof(buf), "No chatrooms available.\n");
-        send(user->sock, buf, strlen(buf), 0);
-        return 0;
-    }
+    pthread_mutex_lock(&g_rooms_mutex);
+    Room *room = g_rooms;
+    if (room == NULL) {
+        strcat(room_list, "No rooms available.\n");
+    } else {
+        while (room != NULL) {
+            int remaining_len = BUFFER_SIZE - strlen(room_list) - 1; // 남은 버퍼 길이
+            // 방 정보 포맷팅
+            if (remaining_len <= 0) {
+                strcat(room_list, "...");
+                break;
+            }
+            int written = snprintf(room_list + strlen(room_list), remaining_len,
+                                   "ID %u: '%s' (%d members)", room->no, room->room_name, room->member_count);
+            if (written < 0 || written >= remaining_len) {
+                strcat(room_list, "...");
+                break;
+            }
 
-    printf("List of Chatrooms:\n");
-    printf("%s\t%8s\t%8s\t\n", "INDEX", "ROOM NUMBER", "ROOM NAME");
-    printf("===================================================\n");
-
-    for (int i = 1; i <= room_num; i++) {
-        snprintf(line, sizeof(line), "%d\t%8d\t ----- %8s\t\n", i, rooms[i].no, rooms[i].room_name);
-        strcat(buf, line);
-
-        for (int j = 0; j < MAX_CLIENT && rooms[i].member[j]; j++) {
-            strcat(buf, rooms[i].member[j]->id);
-            strcat(buf, " ");
+            if (room->next != NULL) {
+                remaining_len = BUFFER_SIZE - strlen(room_list) - 1;
+                if (remaining_len > strlen(", ")) {
+                    strcat(room_list, ", ");
+                } else {
+                    strcat(room_list, "...");
+                    break;
+                }
+            }
+            room = room->next;
         }
-        strcat(buf, "\n");
+        strcat(room_list, "\n");
     }
-
-    send(user->sock, buf, strlen(buf), 0);
-    return 0;
+    pthread_mutex_unlock(&g_rooms_mutex);
+    safe_send(sock, room_list);
 }
 
 // 새 대화방 생성 및 참가 함수
