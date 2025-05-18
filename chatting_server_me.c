@@ -251,7 +251,32 @@ void server_quit(void) {
 }
 
 // ==== 메시지 전송 ====
-// 메시지 브로드캐스트 함수
+// 안전한 메시지 전송 함수 - 소켓 번호와 메시지 포인터를 인자로 받음
+ssize_t safe_send(int sock, const char *msg) {
+    if (sock < 0 || msg == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    ssize_t len = strlen(msg);
+    ssize_t total_sent = 0;
+    ssize_t bytes_left = len;
+
+    while (bytes_left > 0) {
+        ssize_t sent = send(sock, msg + total_sent, bytes_left, 0);
+        if (sent < 0) {
+            // send() 호출이 인터럽트된 경우 재시도
+            if (errno == EINTR) continue;
+            perror("send error");
+            return -1;
+        }
+        total_sent += sent;
+        bytes_left -= sent;
+    }
+    return total_sent;
+}
+
+// 로비의 모든 사용자에게 메시지 브로드캐스트 함수
 void broadcast_to_all(User *sender, const char *format, ...) {
     char msg[BUFFER_SIZE];
 
