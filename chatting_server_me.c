@@ -495,18 +495,79 @@ void list_add_client(User *user) {
     pthread_mutex_unlock(&g_users_mutex);
 }
 
-void list_remove_client(User *user);
-User *find_client_by_sock(int sock);
-User *find_client_by_id(const char *id);
+// 사용자 제거 함수
+void list_remove_client(User *user) {
+    pthread_mutex_lock(&g_users_mutex);
+    list_remove_client_unlocked(user);
+    pthread_mutex_unlock(&g_users_mutex);
+}
 
-void list_add_room(Room *room);
-void list_remove_room(Room *room);
-Room *find_room(const char *name);
-Room *find_room_by_id(unsigned int id);
+// 사용자 검색 함수
+User *find_client_by_sock(int sock) {
+    pthread_mutex_lock(&g_users_mutex);
+    User *user = find_client_by_sock_unlocked(sock);
+    pthread_mutex_unlock(&g_users_mutex);
+    return user;
+}
 
-void room_add_member(Room *room, User *user);
-void room_remove_member(Room *room, User *user);
-void destroy_room_if_empty(Room *room);
+// 사용자 ID로 검색 함수
+User *find_client_by_id(const char *id) {
+    pthread_mutex_lock(&g_users_mutex);
+    User *user = find_client_by_id_unlocked(id);
+    pthread_mutex_unlock(&g_users_mutex);
+    return user;
+}
+
+// 대화방 추가 함수
+void list_add_room(Room *room) {
+    pthread_mutex_lock(&g_rooms_mutex);
+    list_add_room_unlocked(room);
+    pthread_mutex_unlock(&g_rooms_mutex);
+}
+
+// 대화방 제거 함수
+void list_remove_room(Room *room) {
+    pthread_mutex_lock(&g_rooms_mutex);
+    list_remove_room_unlocked(room);
+    pthread_mutex_unlock(&g_rooms_mutex);
+}
+
+// 대화방 검색 함수
+Room *find_room(const char *name) {
+    pthread_mutex_lock(&g_rooms_mutex);
+    Room *room = find_room_unlocked(name);
+    pthread_mutex_unlock(&g_rooms_mutex);
+    return room;
+}
+
+// 대화방 ID로 검색 함수
+Room *find_room_by_id(unsigned int id) {
+    pthread_mutex_lock(&g_rooms_mutex);
+    Room *room = find_room_by_id_unlocked(id);
+    pthread_mutex_unlock(&g_rooms_mutex);
+    return room;
+}
+
+// 대화방 참여자 추가 함수
+void room_add_member(Room *room, User *user) {
+    pthread_mutex_lock(&g_rooms_mutex);
+    room_add_member_unlocked(room, user);
+    pthread_mutex_unlock(&g_rooms_mutex);
+}
+
+// 대화방 참여자 제거 함수
+void room_remove_member(Room *room, User *user) {
+    pthread_mutex_lock(&g_rooms_mutex);
+    room_remove_member_unlocked(room, user);
+    pthread_mutex_unlock(&g_rooms_mutex);
+}
+
+// 대화방이 비어있는 경우 제거 함수
+void destroy_room_if_empty(Room *room) {
+    pthread_mutex_lock(&g_rooms_mutex);
+    destroy_room_if_empty_unlocked(room);
+    pthread_mutex_unlock(&g_rooms_mutex);
+}
 
 // ==== 사용자 상태 관리 ====
 // ==== 세션 처리 ====
