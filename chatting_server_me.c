@@ -19,49 +19,8 @@
 #define BUFFER_SIZE     1024
 
 
-// =================== 구조체 ======================
-// User 구조체
-typedef struct User {
-    int sock;                           // 소켓 번호
-    char id[64];                        // 사용자 ID (닉네임)
-    pthread_t thread;                   // 사용자별 스레드
-    struct Room *room;                  // 대화방 포인터
-    struct User *next;                  // 다음 사용자 포인터
-    struct User *prev;                  // 이전 사용자 포인터
-    struct User *room_user_next;        // 대화방 내 사용자 포인터
-    struct User *room_user_prev;        // 대화방 내 사용자 포인터
-} User;
-
-// Room 구조체
-typedef struct Room {
-    char room_name[64];                 // 방 이름
-    unsigned int no;                    // 방 고유 번호
-    struct User *members[MAX_CLIENT];   // 방에 참여중인 멤버 목록
-    int member_count;                   // 생에 참여중인 멤버 수
-    struct Room *next;                  // 다음 방 포인터
-    struct Room *prev;                  // 이전 방 포인터
-    int created_time;                   // 생성된 시간
-} Room;
-
-// 서버 cmd 구조체
-typedef void (*server_cmd_func_t)(void);
-typedef struct {
-    const char          *cmd;       // 명령어 문자열
-    server_cmd_func_t   cmd_func;   // 해당 명령어 처리 함수
-    const char          *comment;   // 도움말 출력용 설명
-} server_cmd_t;
-
-// 클라이언트 cmd 구조체
-typedef void (*cmd_func_t)(User *user, char *args);
-typedef void (*usage_func_t)(User *user);
-typedef struct {
-    const char          *cmd;            // 명령어 문자열
-    cmd_func_t          cmd_func;        // 해당 명령어 처리 함수
-    usage_func_t        usage_func;      // 사용법 안내 함수
-    const char          *comment;        // 도움말 출력용 설명
-} client_cmd_t;
-
-
+typedef struct User User;
+typedef struct Room Room;
 // ==================== 기능 함수 선언 =====================
 // ======== 서버부 ========
 // ==== CLI ====
@@ -82,7 +41,6 @@ void list_add_room_unlocked(Room *room);
 void list_remove_room_unlocked(Room *room);
 Room *find_room_unlocked(const char *name);
 Room *find_room_by_id_unlocked(unsigned int id);
-Room *find_room_by_id(unsigned int id);
 
 void room_add_member_unlocked(Room *room, User *user);
 void room_remove_member_unlocked(Room *room, User *user);
@@ -109,8 +67,8 @@ void process_server_command(int epfd, int server_sock);
 // ==== CLI ====
 void cmd_users(User *user);
 void cmd_rooms(int sock);
-int cmd_create(User *creator, char *room_name);
-int cmd_join(User *user, int room_no);
+void cmd_create(User *creator, const char *room_name);
+void cmd_join(User *user, const char *room_no_str);
 int cmd_join_wrapper(User *user, char *args);
 int cmd_leave(User *user, char *args);
 int cmd_help(User *user, char *args);
@@ -119,6 +77,30 @@ void usage_create(User *user);
 void usage_join(User *user);
 void usage_leave(User *user);
 void usage_help(User *user);
+
+// =================== 구조체 ======================
+// User 구조체
+typedef struct User {
+    int sock;                           // 소켓 번호
+    char id[64];                        // 사용자 ID (닉네임)
+    pthread_t thread;                   // 사용자별 스레드
+    struct Room *room;                  // 대화방 포인터
+    struct User *next;                  // 다음 사용자 포인터
+    struct User *prev;                  // 이전 사용자 포인터
+    struct User *room_user_next;        // 대화방 내 사용자 포인터
+    struct User *room_user_prev;        // 대화방 내 사용자 포인터
+} User;
+
+// Room 구조체
+typedef struct Room {
+    char room_name[64];                 // 방 이름
+    unsigned int no;                    // 방 고유 번호
+    struct User *members[MAX_CLIENT];   // 방에 참여중인 멤버 목록
+    int member_count;                   // 생에 참여중인 멤버 수
+    struct Room *next;                  // 다음 방 포인터
+    struct Room *prev;                  // 이전 방 포인터
+    int created_time;                   // 생성된 시간
+} Room;
 
 
 // ================== 전역 변수 ===================
@@ -131,6 +113,26 @@ static unsigned int g_next_room_no = 1; // 다음 대화방 고유 번호
 // Mutex 사용하여 스레드 상호 배제를 통해 안전하게 처리
 pthread_mutex_t g_users_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t g_rooms_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+
+// 서버 cmd 구조체
+typedef void (*server_cmd_func_t)(void);
+typedef struct {
+    const char          *cmd;       // 명령어 문자열
+    server_cmd_func_t   cmd_func;   // 해당 명령어 처리 함수
+    const char          *comment;   // 도움말 출력용 설명
+} server_cmd_t;
+
+// 클라이언트 cmd 구조체
+typedef void (*cmd_func_t)(User *user, char *args);
+typedef void (*usage_func_t)(User *user);
+typedef struct {
+    const char          *cmd;            // 명령어 문자열
+    cmd_func_t          cmd_func;        // 해당 명령어 처리 함수
+    usage_func_t        usage_func;      // 사용법 안내 함수
+    const char          *comment;        // 도움말 출력용 설명
+} client_cmd_t;
+
 
 // command 테이블 (서버)
 server_cmd_t cmd_tbl_server[] = {
@@ -165,11 +167,11 @@ void server_user(void) {
     // 사용자 목록을 순회하며 정보 출력
     for (User *u = g_users; u != NULL; u = u->next) {
         // 사용자가 참여 중인 방 이름, 없으면 "Lobby"로 표시
-        const char *room_name = (u->room ? u->room->room_name : "Lobby");
+        const char *r = (u->room ? u->room->room_name : "Lobby");
         printf("%2d\t%16s\t%20s\n", 
                 u->sock,    // 소켓 번호
                 u->id,      // 사용자 ID
-                room_name   // 대화방 이름
+                r   // 대화방 이름
         );
     }
     pthread_mutex_unlock(&g_users_mutex);
@@ -258,27 +260,25 @@ ssize_t safe_send(int sock, const char *msg) {
         return -1;
     }
 
-    size_t to_send = strlen(msg);
-    size_t total = 0;
-    while (total < to_send) {
-        ssize_t sent = send(sock, msg + total, to_send - total, 0);
+    ssize_t len = strlen(msg);
+    ssize_t total_sent = 0;
+    ssize_t bytes_left = len;
+
+    while (bytes_left > 0) {
+        ssize_t sent = send(sock, msg + total_sent, bytes_left, 0);
         if (sent < 0) {
             // send() 호출이 인터럽트된 경우 재시도
             if (errno == EINTR) continue;
-            perror("send failed");
+            perror("send error");
             return -1;
         }
-
-        // 전송된 바이트 수가 0인 경우(상대방이 연결 종료) 연결 종료
-        if (sent == 0) {
-            return total;
-        }
-        total += sent;
+        total_sent += sent;
+        bytes_left -= sent;
     }
-    return total;
+    return total_sent;
 }
 
-// 메시지 브로드캐스트 함수
+// 로비의 모든 사용자에게 메시지 브로드캐스트 함수
 void broadcast_to_all(User *sender, const char *format, ...) {
     char msg[BUFFER_SIZE];
 
@@ -323,73 +323,101 @@ void broadcast_to_room(Room *room, User *sender, const char *format, ...) {
     pthread_mutex_unlock(&g_rooms_mutex);
 }
 
+// ==== 리스트 및 방 관리 ====
+// 사용자 추가 함수
+void list_add_client_unlocked(User *user) {
+    if (g_users == NULL) {
+        // 사용자 목록이 비어있는 경우
+        g_users = user;
+        user->next = NULL;
+        user->prev = NULL;
+    } else {
+        User *current = g_users;
+        while (current->next != NULL) {
+            current = current->next;
+        }
+        current->next = user;
+        user->prev = current;
+        user->next = NULL;
+    }
+}
+
+// 사용자 제거 함수
+void list_remove_client_unlocked(User *user) {
+    if (user->prev != NULL) {
+        user->prev->next = user->next;
+    } else {
+        g_users = user->next;
+    }
+    if (user->next != NULL) {
+        user->next->prev = user->prev;
+    }
+    user->prev = NULL;
+    user->next = NULL;
+}
+
+// 사용자 검색 함수
+User *find_client_by_sock_unlocked(int sock) {
+
+}
+
+// 사용자 ID로 검색 함수
+User *find_client_by_id_unlocked(const char *id) {
+
+}
+
+// 대화방 추가 함수
+void list_add_room_unlocked(Room *room) {
+
+}
+
+// 대화방 제거 함수
+void list_remove_room_unlocked(Room *room) {
+
+}
+
+// 대화방 검색 함수
+Room *find_room_unlocked(const char *name) {
+
+}
+
+// 대화방 ID로 검색 함수
+Room *find_room_by_id_unlocked(unsigned int id) {
+
+}
+
+// 대화방 참여자 추가 함수
+void room_add_member_unlocked(Room *room, User *user) {
+
+}
+
+// 대화방 참여자 제거 함수
+void room_remove_member_unlocked(Room *room, User *user) {
+
+}
+
+// 대화방이 비어있는 경우 제거 함수
+void destroy_room_if_empty_unlocked(Room *room) {
+
+}
+
+
+// ==== 동기화(Mutex) 래퍼 ====
+void list_add_client(User *user);
+void list_remove_client(User *user);
+User *find_client_by_sock(int sock);
+User *find_client_by_id(const char *id);
+
+void list_add_room(Room *room);
+void list_remove_room(Room *room);
+Room *find_room(const char *name);
+Room *find_room_by_id(unsigned int id);
+
+void room_add_member(Room *room, User *user);
+void room_remove_member(Room *room, User *user);
+void destroy_room_if_empty(Room *room);
+
 // ==== 사용자 상태 관리 ====
-// 클라이언트 목록 문자열로 변환 함수
-void resp_users(char *buf) {
-    buf[0] = '\0';
-
-    for (int i = 0; i < client_num; i++) {
-        strcat(buf, users[i]->id);
-        strcat(buf, ", ");
-    }
-}
-
-// 클라이언트 연결 종료 함수
-void disconnect_user(User *user) {
-    if (!user) return;
-
-    int left_room = user->chat_room;
-
-    // 클라이언트 소켓 종료
-    if (user->is_conn) {
-        close(user->sock);
-        user->is_conn = 0;
-        printf("User %s disconnected\n", user->id);
-    }
-
-    // 연결 끊긴 사용자 제거
-    for (int i = 0; i < client_num; i++) {
-        if (users[i] == user) {
-            users[i] = users[client_num - 1];
-            users[client_num - 1] = NULL;
-            client_num--;
-            break;
-        }
-    }
-
-    // 사용자가 참여 중이던 대화방에서 제거
-    if (left_room != ROOM0 && left_room <= room_num) {
-        roominfo_t *room = &rooms[left_room - 1];
-        for (int i = 0; i < MAX_CLIENT; i++) {
-            if (room->member[i] == user) {
-                room->member[i] == NULL;
-                break;
-            }
-        }
-
-        // 빈 방인지 검사
-        int occupied = 0;
-        for (int i = 0; i < MAX_CLIENT; i++) {
-            if (room->member[i] != NULL) {
-                occupied = 1;
-                break;
-            }
-        }
-
-        if (!occupied) {
-            // 방 삭제
-            for (int i = left_room - 1; i < room_num - 1; i++) {
-                rooms[i] = rooms[i + 1];
-                rooms[i].no = i + 1;
-            }
-            room_num--;
-            printf("Room %d removed (empty after disconnected)\n", left_room);
-        }
-    }
-
-    free(user); // 메모리 해제
-}
-
 // ==== 세션 처리 ====
 // pthread 함수
 void *client_process(void *args) {
@@ -556,133 +584,163 @@ void cmd_users(User *user) {
 
 // 대화방 목록 정보 출력 함수
 void cmd_rooms(int sock) {
-    char buf[512];
-    char line[128];
+    char room_list[BUFFER_SIZE];
+    room_list[0] = '\0';
+    strcat(room_list, "[Server] Available rooms: ");
 
-    if (room_num == 0) {
-        snprintf(buf, sizeof(buf), "No chatrooms available.\n");
-        send(user->sock, buf, strlen(buf), 0);
-        return 0;
-    }
+    pthread_mutex_lock(&g_rooms_mutex);
+    Room *room = g_rooms;
+    if (room == NULL) {
+        strcat(room_list, "No rooms available.\n");
+    } else {
+        while (room != NULL) {
+            int remaining_len = BUFFER_SIZE - strlen(room_list) - 1; // 남은 버퍼 길이
+            // 방 정보 포맷팅
+            if (remaining_len <= 0) {
+                strcat(room_list, "...");
+                break;
+            }
+            int written = snprintf(room_list + strlen(room_list), remaining_len,
+                                   "ID %u: '%s' (%d members)", room->no, room->room_name, room->member_count);
+            if (written < 0 || written >= remaining_len) {
+                strcat(room_list, "...");
+                break;
+            }
 
-    printf("List of Chatrooms:\n");
-    printf("%s\t%8s\t%8s\t\n", "INDEX", "ROOM NUMBER", "ROOM NAME");
-    printf("===================================================\n");
-
-    for (int i = 1; i <= room_num; i++) {
-        snprintf(line, sizeof(line), "%d\t%8d\t ----- %8s\t\n", i, rooms[i].no, rooms[i].room_name);
-        strcat(buf, line);
-
-        for (int j = 0; j < MAX_CLIENT && rooms[i].member[j]; j++) {
-            strcat(buf, rooms[i].member[j]->id);
-            strcat(buf, " ");
+            if (room->next != NULL) {
+                remaining_len = BUFFER_SIZE - strlen(room_list) - 1;
+                if (remaining_len > strlen(", ")) {
+                    strcat(room_list, ", ");
+                } else {
+                    strcat(room_list, "...");
+                    break;
+                }
+            }
+            room = room->next;
         }
-        strcat(buf, "\n");
+        strcat(room_list, "\n");
     }
-
-    send(user->sock, buf, strlen(buf), 0);
-    return 0;
+    pthread_mutex_unlock(&g_rooms_mutex);
+    safe_send(sock, room_list);
 }
 
 // 새 대화방 생성 및 참가 함수
-int cmd_new(User *creator, char *room_name) {
-    char msg[256];
+void cmd_create(User *creator, const char *room_name) {
+    // 대화방 이름 유효성 검사
+    if (!room_name || strlen(room_name) == 0) {
+        usage_create(creator);
+        return -1;
+    }
     
-    if (!room_name || strlen(room_name) == 0) { 
-        usage_new(creator);
+    // 대화방 이름 길이 제한
+    if (strlen(room_name) >= sizeof(((Room *)0)->room_name)) {
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "[Server] Room name too long (max %zu characters).\n", sizeof(((Room*)0)->room_name) - 1);
+        safe_send(creator->sock, error_msg);
+        return -1;
+    }
+    
+    // 이미 대화방에 참여 중인지 확인
+    if (creator != NULL) {
+        safe_send(creator->sock, "[Server] You are already in a room. Please /leave first.\n");
         return -1;
     }
 
     // 대화방 이름 중복 체크
-    for (int i = 0; i < room_num; i++) {
-        if (strcmp(rooms[i].room_name, room_name) == 0) {
-            snprintf(msg, sizeof(msg), "Duplicated Room name: %s\n", room_name);
-            send(creator->sock, msg, strlen(msg), 0);
-            return -1;
-        }
-    }
-
-    // 새 대화방 생성
-    if (room_num >= MAX_CLIENT) {
-        snprintf(msg, sizeof(msg), "Room limit reached. Cannot create more chatroms.\n");
-        send(creator->sock, msg, strlen(msg), 0);
+    pthread_mutex_lock(&g_rooms_mutex);
+    Room *existing_room_check = find_room_unlocked(room_name);
+    if (existing_room_check != NULL) {
+        pthread_mutex_unlock(&g_rooms_mutex);
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "[Server] Room name '%s' already exists.\n", room_name);
+        safe_send(creator->sock, error_msg);
         return -1;
     }
 
-    rooms[room_num].no = room_num + 1;
-    strncpy(rooms[room_num].room_name, room_name, sizeof(rooms[room_num].room_name) - 1);
-    rooms[room_num].member[0] = creator;
-    creator->chat_room = rooms[room_num].no;
-    room_num++;
+    unsigned int new_room_no = g_next_room_no++;
 
-    snprintf(msg, sizeof(msg), "New room [%s] created and joined.\n", room_name);
-    send(creator->sock, msg, strlen(msg), 0);
-    return 0;
+    // 대화방 구조체 메모리 할당
+    Room *new_room = (Room *)malloc(sizeof(Room));
+    if (!new_room) {
+        perror("malloc for new room failed");
+        safe_send(creator->sock, "[Server] Failed to create room.\n");
+        return -1;
+    }
+
+    strncpy(new_room->room_name, room_name, sizeof(new_room->room_name) - 1);
+    new_room->room_name[sizeof(new_room->room_name) - 1] = '\0';
+    new_room->no = new_room_no;
+    memset(new_room->members, 0, sizeof(new_room->members));
+    new_room->member_count = 0;
+    new_room->next = NULL;
+    new_room->prev = NULL;
+
+    // 대화방 리스트에 추가
+    list_add_room_unlocked(new_room);
+    pthread_mutex_unlock(&g_rooms_mutex);
+
+    // 대화방에 사용자 추가
+    room_add_member(new_room, creator);
+
+    printf("[INFO] User %s created room '%s' (ID: %u) and joined.\n", creator->id, new_room->room_name, new_room->no);
+    char success_msg[BUFFER_SIZE];
+    snprintf(success_msg, sizeof(success_msg), "[Server] Room '%s' (ID: %u) created and joined.\n", new_room->room_name, new_room->no);
+    safe_send(creator->sock, success_msg);
 }
 
 // 특정 대화방 참여 함수
-int cmd_enter(User *user, int room_no) {
-    char buf[128];
+void cmd_join(User *user, const char *room_no_str) {
+    // 대화방 이름 유효성 검사
+    if (!room_no_str || strlen(room_no_str) == 0) {
+        usage_join(user);
+        return -1;
+    }
+
+    // 대화방에 이미 참여 중인지 확인
+    if (user->room != NULL) {
+        safe_send(user->sock, "[Server] You are already in a room. Please /leave first.\n");
+        return -1;
+    }
+
+    char *endptr;
+    long num_id = strtol(room_no_str, &endptr, 10);
 
     // 대화방 번호 유효성 검사
-    if (room_no <= 0 || room_no > room_num) {
-        snprintf(buf, sizeof(buf), "Invalid room number.\n");
-        send(user->sock, buf, strlen(buf), 0);
+    if (*endptr != '\0' || num_id <= 0 || num_id >= g_next_room_no || num_id > 0xFFFFFFFF) {
+        safe_send(user->sock, "[Server] Invalid room ID. Please use a valid positive number.\n");
         return -1;
     }
 
-    roominfo_t *room = &rooms[room_no - 1];
+    unsigned int room_no_to_join = (unsigned int)num_id;
 
-    // 1:1 대화방인지 확인
-    if (strcmp(room->room_name, "1:1 chatroom") == 0) {
-        snprintf(buf, sizeof(buf), "This room is a 1:1 chat. You cannot join.\n");
-        send(user->sock, buf, strlen(buf), 0);
+    // 대화방 찾기
+    Room *target_room = find_room_by_id(room_no_to_join);
+    if (!target_room) {
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "[Server] Room with ID %u not found.\n", room_no_to_join);
+        safe_send(user->sock, error_msg);
         return -1;
     }
 
-    // 이미 해당 방에 들어가 있는지 확인
-    if (user->chat_room == room_no) {
-        snprintf(buf, sizeof(buf), "You are already in this room %s.\n", room->room_name);
-        send(user->sock, buf, strlen(buf), 0);
-        return -1;
-    }
-
-    // 이미 다른 방에 들어가 있는지 확인
-    if (user->chat_room != ROOM0) {
-        snprintf(buf, sizeof(buf), "If you want to enter another chat, leave your current room %d\n", user->chat_room);
-        send(user->sock, buf, strlen(buf), 0);
-        return -1;
-    }
-
-    // 대화방 참가
-    for (int i = 0; i < MAX_CLIENT; i++) {
-        if (room->member[i] == NULL) {
-            room->member[i] = user;
-            user->chat_room = room->no;
-            snprintf(buf, sizeof(buf), "Entered Chatroom %s\n", room->room_name);
-            send(user->sock, buf, strlen(buf), 0);
-            return 0;
-        }
-    }
-
-    // 대화방 인원 제한
-    snprintf(buf, sizeof(buf), "Room is full.\n");
-    send(user->sock, buf, strlen(buf), 0);
-    return -1;
+    room_add_member(target_room, user);
+    printf("[INFO] User %s joined room '%s' (ID: %u).\n", user->id, target_room->room_name, target_room->no);
+    char success_msg[BUFFER_SIZE];
+    snprintf(success_msg, sizeof(success_msg), "[Server] Joined room '%s' (ID: %u).\n", target_room->room_name, target_room->no);
+    safe_send(user->sock, success_msg);
+    broadcast_to_room(target_room, user, "[Server] %s joined the room.\n", user->id);
+    return 0;
 }
 
 // typedef에서 warning: type allocation error 방지
-int cmd_enter_wrapper(User *user, char *args) {
+int cmd_join_wrapper(User *user, char *args) {
     char buf[256];
     if (!args) {
         usage_enter(user);
-        send(user->sock, buf, strlen(buf), 0);
         return -1;
     }
 
     int room_no = atoi(args);
-    return cmd_enter(user, room_no);
-}
+    return cmd_join(user, room_no);}
 
 // 현재 대화방 나가기 함수
 int cmd_exit(User *user, char *args) {
@@ -741,7 +799,6 @@ int cmd_exit(User *user, char *args) {
     return 0;
 }
 
-
 // 도움말 출력 함수
 int cmd_help(User *user, char *args) {
     char buf[512];
@@ -758,24 +815,24 @@ int cmd_help(User *user, char *args) {
 }
 
 
-void usage_new(User *user) {
-    char *msg = "Usage: /new <room_name>\n";
-    send(user->sock, msg, strlen(msg), 0);
+void usage_create(User *user) {
+    char *msg = "Usage: /create <room_name>\n";
+    safe_send(user->sock, msg);
 }
 
-void usage_enter(User *user) {
-    char *msg = "Usage: /enter <room_no>\n";
-    send(user->sock, msg, strlen(msg), 0);
+void usage_join(User *user) {
+    char *msg = "Usage: /join <room_no>\n";
+    safe_send(user->sock, msg);
 }
 
-void usage_exit(User *user) {
+void usage_leave(User *user) {
     char *msg = "Usage: /exit\n";
-    send(user->sock, msg, strlen(msg), 0);
+    safe_send(user->sock, msg);
 }
 
 void usage_help(User *user) {
     char *msg = "Usage: /help <command>\n";
-    send(user->sock, msg, strlen(msg), 0);
+    safe_send(user->sock, msg);
 }
 
 
