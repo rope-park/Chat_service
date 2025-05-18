@@ -490,7 +490,18 @@ void room_add_member_unlocked(Room *room, User *user) {
 
 // 대화방 참여자 제거 함수
 void room_remove_member_unlocked(Room *room, User *user) {
-
+    if (user->room_user_prev != NULL) {
+        user->room_user_prev->room_user_next = user->room_user_next;
+    } else {
+        room->members[0] = user->room_user_next;
+    }
+    if (user->room_user_next != NULL) {
+        user->room_user_next->room_user_prev = user->room_user_prev;
+    }
+    user->room_user_prev = NULL;
+    user->room_user_next = NULL;
+    user->room = NULL; // 사용자 구조체에 대화방 정보 초기화
+    room->member_count--; // 대화방 참여자 수 감소
 }
 
 // 대화방이 비어있는 경우 제거 함수
