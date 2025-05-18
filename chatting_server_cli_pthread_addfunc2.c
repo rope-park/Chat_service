@@ -470,7 +470,22 @@ Room *find_room_by_id_unlocked(unsigned int id) {
 
 // 대화방 참여자 추가 함수
 void room_add_member_unlocked(Room *room, User *user) {
-
+    if (room->members == NULL) {
+        // 대화방에 참여자가 없는 경우
+        room->members[0] = user;
+        user->room_user_next = NULL;
+        user->room_user_prev = NULL;
+    } else {
+        User *current = room->members;
+        while (current->room_user_next != NULL) {
+            current = current->room_user_next;
+        }
+        current->room_user_next = user;
+        user->room_user_prev = current;
+        user->room_user_next = NULL;
+    }
+    user->room = room; // 사용자 구조체에 대화방 정보 저장
+    room->member_count++; // 대화방 참여자 수 증가
 }
 
 // 대화방 참여자 제거 함수
