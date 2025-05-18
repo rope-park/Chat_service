@@ -411,7 +411,20 @@ User *find_client_by_id_unlocked(const char *id) {
 
 // 대화방 추가 함수
 void list_add_room_unlocked(Room *room) {
-
+    if (g_rooms == NULL) {
+        // 대화방 목록이 비어있는 경우
+        g_rooms = room;
+        room->next = NULL;
+        room->prev = NULL;
+    } else {
+        Room *current = g_rooms;
+        while (current->next != NULL) {
+            current = current->next;
+        }
+        current->next = room;
+        room->prev = current;
+        room->next = NULL;
+    }
 }
 
 // 대화방 제거 함수
