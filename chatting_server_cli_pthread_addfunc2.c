@@ -506,7 +506,11 @@ void room_remove_member_unlocked(Room *room, User *user) {
 
 // 대화방이 비어있는 경우 제거 함수
 void destroy_room_if_empty_unlocked(Room *room) {
-
+    if (room->member_count <= 0) {
+        printf("[INFO] Room '%s' is empty, destroying.\n", room->room_name);
+        list_remove_room_unlocked(room);
+        free(room);
+    }
 }
 
 
