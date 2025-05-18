@@ -515,7 +515,13 @@ void destroy_room_if_empty_unlocked(Room *room) {
 
 
 // ==== 동기화(Mutex) 래퍼 ====
-void list_add_client(User *user);
+// 사용자 추가 함수
+void list_add_client(User *user) {
+    pthread_mutex_lock(&g_users_mutex);
+    list_add_client_unlocked(user);
+    pthread_mutex_unlock(&g_users_mutex);
+}
+
 void list_remove_client(User *user);
 User *find_client_by_sock(int sock);
 User *find_client_by_id(const char *id);
@@ -1045,7 +1051,11 @@ int cmd_dm(userinfo_t *user, char *args) {
 }
 
 // 현재 대화방 나가기 함수
+<<<<<<< HEAD:chatting_server_cli_pthread_addfunc2.c
 int cmd_exit(userinfo_t *user, char *args) {
+=======
+int cmd_leave(User *user, char *args) {
+>>>>>>> ffa4f57 (Feat: 동기화(Mutex) 래퍼 함수들 추가):chatting_server_me.c
     char buf[128];
     int current_room_no = user->chat_room;
     
