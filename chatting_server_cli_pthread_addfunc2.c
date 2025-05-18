@@ -443,7 +443,15 @@ void list_remove_room_unlocked(Room *room) {
 
 // 대화방 검색 함수
 Room *find_room_unlocked(const char *name) {
-
+    Room *current = g_rooms;
+    // 대화방 목록을 순회하며 이름으로 검색
+    while (current != NULL) {
+        // 대화방 이름 비교
+        if (strcmp(current->room_name, name) == 0) {
+            return current;
+        }
+        current = current->next;
+    }
 }
 
 // 대화방 ID로 검색 함수
