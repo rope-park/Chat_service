@@ -488,7 +488,13 @@ void destroy_room_if_empty_unlocked(Room *room) {
 
 
 // ==== 동기화(Mutex) 래퍼 ====
-void list_add_client(User *user);
+// 사용자 추가 함수
+void list_add_client(User *user) {
+    pthread_mutex_lock(&g_users_mutex);
+    list_add_client_unlocked(user);
+    pthread_mutex_unlock(&g_users_mutex);
+}
+
 void list_remove_client(User *user);
 User *find_client_by_sock(int sock);
 User *find_client_by_id(const char *id);
@@ -828,7 +834,7 @@ int cmd_join_wrapper(User *user, char *args) {
     return cmd_join(user, room_no);}
 
 // 현재 대화방 나가기 함수
-int cmd_exit(User *user, char *args) {
+int cmd_leave(User *user, char *args) {
     char buf[128];
     int current_room_no = user->chat_room;
     
