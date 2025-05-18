@@ -429,7 +429,16 @@ Room *find_room_unlocked(const char *name) {
 
 // 대화방 ID로 검색 함수
 Room *find_room_by_id_unlocked(unsigned int id) {
-
+    Room *current = g_rooms;
+    // 대화방 목록을 순회하며 ID로 검색
+    while (current != NULL) {
+        // 대화방 ID 비교
+        if (current->no == id) {
+            return current;
+        }
+        current = current->next;
+    }
+    return NULL;
 }
 
 // 대화방 참여자 추가 함수
