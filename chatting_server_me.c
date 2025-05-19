@@ -181,14 +181,20 @@ void server_user(void) {
 void server_room(void) {
     pthread_mutex_lock(&g_rooms_mutex);
 
-    printf("%4s\t%20s\t%8s\t%s\n", "ID", "ROOM NAME", "#USER", "MEMBER");
+    printf("%4s\t%20s\t%20s\t%8s\t%s\n", "ID", "ROOM NAME", "CREATED TIME", "#USER", "MEMBER");
     printf("=======================================================================\n");
 
     // 대화방 목록을 순회하며 정보 출력
     for (Room *r = g_rooms; r != NULL; r = r->next) {
-        printf("%4u\t%20s\t%8d\t",
+        // 대화방 생성 시간 포맷팅
+        char time_str[20];
+        struct tm *tm_info = localtime((time_t *)&r->created_time);
+        strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
+        // 대화방 정보 출력
+        printf("%4u\t%20s\t%20s\t%8d\t",
                 r->no,               // 방 번호
                 r->room_name,        // 방 이름
+                time_str,            // 방 생성 시간
                 r->member_count      // 방 참여자 수
         );
         for (int i = 0; i < r->member_count; i++) {
@@ -320,6 +326,252 @@ void broadcast_to_room(Room *room, User *sender, const char *format, ...) {
         }
         member = member->room_user_next;
     }
+    pthread_mutex_unlock(&g_rooms_mutex);
+}
+
+// ==== 리스트 및 방 관리 ====
+// 사용자 추가 함수
+void list_add_client_unlocked(User *user) {
+    if (g_users == NULL) {
+        // 사용자 목록이 비어있는 경우
+        g_users = user;
+        user->next = NULL;
+        user->prev = NULL;
+    } else {
+        User *current = g_users;
+        while (current->next != NULL) {
+            current = current->next;
+        }
+        current->next = user;
+        user->prev = current;
+        user->next = NULL;
+    }
+}
+
+// 사용자 제거 함수
+void list_remove_client_unlocked(User *user) {
+    if (user->prev != NULL) {
+        user->prev->next = user->next;
+    } else {
+        g_users = user->next;
+    }
+    if (user->next != NULL) {
+        user->next->prev = user->prev;
+    }
+    user->prev = NULL;
+    user->next = NULL;
+}
+
+// 사용자 검색 함수
+User *find_client_by_sock_unlocked(int sock) {
+    User *current = g_users;
+    // 사용자 목록을 순회하며 소켓 번호로 검색
+    while (current != NULL) {
+        if (current->sock == sock) {
+            return current;
+        }
+        current = current->next;
+    }
+    return NULL;
+}
+
+// 사용자 ID로 검색 함수
+User *find_client_by_id_unlocked(const char *id) {
+    User *current = g_users;
+    // 사용자 목록을 순회하며 ID로 검색
+    while (current != NULL) {
+        if (strcmp(current->id, id) == 0) {
+            return current;
+        }
+        current = current->next;
+    }
+    return NULL;
+}
+
+// 대화방 추가 함수
+void list_add_room_unlocked(Room *room) {
+    if (g_rooms == NULL) {
+        // 대화방 목록이 비어있는 경우
+        g_rooms = room;
+        room->next = NULL;
+        room->prev = NULL;
+    } else {
+        Room *current = g_rooms;
+        while (current->next != NULL) {
+            current = current->next;
+        }
+        current->next = room;
+        room->prev = current;
+        room->next = NULL;
+    }
+}
+
+// 대화방 제거 함수
+void list_remove_room_unlocked(Room *room) {
+    if (room->prev != NULL) {
+        room->prev->next = room->next;
+    } else {
+        g_rooms = room->next;
+    }
+    if (room->next != NULL) {
+        room->next->prev = room->prev;
+    }
+    room->prev = NULL;
+    room->next = NULL;
+}
+
+// 대화방 검색 함수
+Room *find_room_unlocked(const char *name) {
+    Room *current = g_rooms;
+    // 대화방 목록을 순회하며 이름으로 검색
+    while (current != NULL) {
+        // 대화방 이름 비교
+        if (strcmp(current->room_name, name) == 0) {
+            return current;
+        }
+        current = current->next;
+    }
+}
+
+// 대화방 ID로 검색 함수
+Room *find_room_by_id_unlocked(unsigned int id) {
+    Room *current = g_rooms;
+    // 대화방 목록을 순회하며 ID로 검색
+    while (current != NULL) {
+        // 대화방 ID 비교
+        if (current->no == id) {
+            return current;
+        }
+        current = current->next;
+    }
+    return NULL;
+}
+
+// 대화방 참여자 추가 함수
+void room_add_member_unlocked(Room *room, User *user) {
+    if (room->members == NULL) {
+        // 대화방에 참여자가 없는 경우
+        room->members[0] = user;
+        user->room_user_next = NULL;
+        user->room_user_prev = NULL;
+    } else {
+        User *current = room->members;
+        while (current->room_user_next != NULL) {
+            current = current->room_user_next;
+        }
+        current->room_user_next = user;
+        user->room_user_prev = current;
+        user->room_user_next = NULL;
+    }
+    user->room = room; // 사용자 구조체에 대화방 정보 저장
+    room->member_count++; // 대화방 참여자 수 증가
+}
+
+// 대화방 참여자 제거 함수
+void room_remove_member_unlocked(Room *room, User *user) {
+    if (user->room_user_prev != NULL) {
+        user->room_user_prev->room_user_next = user->room_user_next;
+    } else {
+        room->members[0] = user->room_user_next;
+    }
+    if (user->room_user_next != NULL) {
+        user->room_user_next->room_user_prev = user->room_user_prev;
+    }
+    user->room_user_prev = NULL;
+    user->room_user_next = NULL;
+    user->room = NULL; // 사용자 구조체에 대화방 정보 초기화
+    room->member_count--; // 대화방 참여자 수 감소
+}
+
+// 대화방이 비어있는 경우 제거 함수
+void destroy_room_if_empty_unlocked(Room *room) {
+    if (room->member_count <= 0) {
+        printf("[INFO] Room '%s' is empty, destroying.\n", room->room_name);
+        list_remove_room_unlocked(room);
+        free(room);
+    }
+}
+
+
+// ==== 동기화(Mutex) 래퍼 ====
+// 사용자 추가 함수
+void list_add_client(User *user) {
+    pthread_mutex_lock(&g_users_mutex);
+    list_add_client_unlocked(user);
+    pthread_mutex_unlock(&g_users_mutex);
+}
+
+// 사용자 제거 함수
+void list_remove_client(User *user) {
+    pthread_mutex_lock(&g_users_mutex);
+    list_remove_client_unlocked(user);
+    pthread_mutex_unlock(&g_users_mutex);
+}
+
+// 사용자 검색 함수
+User *find_client_by_sock(int sock) {
+    pthread_mutex_lock(&g_users_mutex);
+    User *user = find_client_by_sock_unlocked(sock);
+    pthread_mutex_unlock(&g_users_mutex);
+    return user;
+}
+
+// 사용자 ID로 검색 함수
+User *find_client_by_id(const char *id) {
+    pthread_mutex_lock(&g_users_mutex);
+    User *user = find_client_by_id_unlocked(id);
+    pthread_mutex_unlock(&g_users_mutex);
+    return user;
+}
+
+// 대화방 추가 함수
+void list_add_room(Room *room) {
+    pthread_mutex_lock(&g_rooms_mutex);
+    list_add_room_unlocked(room);
+    pthread_mutex_unlock(&g_rooms_mutex);
+}
+
+// 대화방 제거 함수
+void list_remove_room(Room *room) {
+    pthread_mutex_lock(&g_rooms_mutex);
+    list_remove_room_unlocked(room);
+    pthread_mutex_unlock(&g_rooms_mutex);
+}
+
+// 대화방 검색 함수
+Room *find_room(const char *name) {
+    pthread_mutex_lock(&g_rooms_mutex);
+    Room *room = find_room_unlocked(name);
+    pthread_mutex_unlock(&g_rooms_mutex);
+    return room;
+}
+
+// 대화방 ID로 검색 함수
+Room *find_room_by_id(unsigned int id) {
+    pthread_mutex_lock(&g_rooms_mutex);
+    Room *room = find_room_by_id_unlocked(id);
+    pthread_mutex_unlock(&g_rooms_mutex);
+    return room;
+}
+
+// 대화방 참여자 추가 함수
+void room_add_member(Room *room, User *user) {
+    pthread_mutex_lock(&g_rooms_mutex);
+    room_add_member_unlocked(room, user);
+    pthread_mutex_unlock(&g_rooms_mutex);
+}
+
+// 대화방 참여자 제거 함수
+void room_remove_member(Room *room, User *user) {
+    pthread_mutex_lock(&g_rooms_mutex);
+    room_remove_member_unlocked(room, user);
+    pthread_mutex_unlock(&g_rooms_mutex);
+}
+
+// 대화방이 비어있는 경우 제거 함수
+void destroy_room_if_empty(Room *room) {
+    pthread_mutex_lock(&g_rooms_mutex);
+    destroy_room_if_empty_unlocked(room);
     pthread_mutex_unlock(&g_rooms_mutex);
 }
 
