@@ -61,7 +61,7 @@ void room_remove_member(Room *room, User *user);
 void destroy_room_if_empty(Room *room);
 // ==== 세션 처리 ====
 void *client_process(void *args);
-void process_server_command(int epfd, int server_sock);
+void process_server_cmd(int epfd, int server_sock);
 
 // ======== 클라이언트부 ========
 // ==== CLI ====
@@ -70,9 +70,9 @@ void cmd_rooms(int sock);
 void cmd_id(User *user, const char *args);
 void cmd_create(User *creator, const char *room_name);
 void cmd_join(User *user, const char *room_no_str);
-int cmd_join_wrapper(User *user, char *args);
-int cmd_leave(User *user, char *args);
-int cmd_help(User *user, char *args);
+void cmd_join_wrapper(User *user, char *args);
+void cmd_leave(User *user);
+void cmd_help(User *user, char *args);
 
 void usage_id(User *user);
 void usage_create(User *user);
@@ -109,7 +109,7 @@ typedef struct Room {
 static User *g_users = NULL; // 사용자 목록
 static Room *g_rooms = NULL; // 대화방 목록
 static int g_server_sock = -1; // 서버 소켓
-static int g_epdf = -1; // epoll 디스크립터
+static int g_epfd = -1; // epoll 디스크립터
 static unsigned int g_next_room_no = 1; // 다음 대화방 고유 번호
 
 // Mutex 사용하여 스레드 상호 배제를 통해 안전하게 처리
@@ -233,7 +233,7 @@ void server_quit(void) {
     }
     pthread_mutex_unlock(&g_users_mutex);
     
-    close(g_epdf); // epoll 디스크립터 종료
+    close(g_epfd); // epoll 디스크립터 종료
 
     // 사용자 목록 메모리 해제
     pthread_mutex_lock(&g_users_mutex);
@@ -321,9 +321,11 @@ void broadcast_to_room(Room *room, User *sender, const char *format, ...) {
     va_end(args);
 
     pthread_mutex_lock(&g_rooms_mutex);
-    User *member = room->members;
+
     // 대화방 참여자 목록을 순회하며 메시지 전송
-    while (member != NULL) {
+    for (int i = 0; i < room->member_count;i++) {
+        User *member = room->members[i];
+        if (member == NULL || member == sender) continue;
         if (member->sock >= 0) {
             safe_send(member->sock, msg);
         }
@@ -584,6 +586,7 @@ void destroy_room_if_empty(Room *room) {
 void *client_process(void *args) {
     User *user = (User *)args;
     char buf[BUFFER_SIZE];
+    ssize_t bytes_received;
 
     snprintf(buf, sizeof(buf), "Welcome!\n");
     send(user->sock, buf, strlen(buf), 0);
@@ -672,30 +675,43 @@ void *client_process(void *args) {
     }
 }
 
-// cmd별 분기 처리 함수
-void handle_cmd_server(User *user, char *input) {
-    char *cmd = strtok(input, " ");
-    char *args = strtok(NULL, ""); // 나머지 인자
-    char *msg = "Unknown command.";
+// 서버 명령어 처리 함수
+void process_server_cmd(int epfd, int server_sock) {
+    char cmd_buf[64];
 
-    if (!cmd) {
-        printf("Bad server command.\n");
+    // 서버 명령어 입력
+    if (!fgets(cmd_buf, sizeof(cmd_buf) - 1, stdin)) {
+        printf("\n[INFO] Server shutting down... (EOF on stdin).\n");
+        server_quit();
         return;
     }
 
-    // 서버 cmd 처리
+    // 개행 문자 제거
+    cmd_buf[strcspn(cmd_buf, "\r\n")] = '\0';
+
+    // 명령어와 인자 분리
+    char *cmd = strtok(cmd_buf, " ");
+
+    // 인자 처리 - 명령어가 없거나 빈 문자열인 경우
+    if (!cmd || strlen(cmd) == 0) {
+        printf("Bad server command.\n");
+        fflush(stdout); // 버퍼 비우기
+        return;
+    }
+
+    // cmd 테이블을 순회하며 명령어 처리
     for (int i = 0; cmd_tbl_server[i].cmd != NULL; i++) {
         if (strcmp(cmd, cmd_tbl_server[i].cmd) == 0) {
             cmd_tbl_server[i].cmd_func();
+            printf("> ");
+            fflush(stdout);
             return;
         }
     }
 
-    if (user) {
-        send(user->sock, msg, strlen(msg), 0);
-    } else {
-        printf("%s", msg);
-    }
+    // 명령어가 테이블에 없는 경우
+    printf("Unknown server command: %s. Available: users, rooms, quit\n", cmd);
+    fflush(stdout);
 }
 
 
@@ -932,86 +948,56 @@ void cmd_join(User *user, const char *room_no_str) {
 }
 
 // typedef에서 warning: type allocation error 방지
-int cmd_join_wrapper(User *user, char *args) {
+void cmd_join_wrapper(User *user, char *args) {
     char buf[256];
     if (!args) {
-        usage_enter(user);
+        usage_join(user);
         return -1;
     }
 
     int room_no = atoi(args);
-    return cmd_join(user, room_no);}
+    cmd_join(user, room_no);}
 
 // 현재 대화방 나가기 함수
-int cmd_leave(User *user, char *args) {
-    char buf[128];
-    int current_room_no = user->chat_room;
-    
+void cmd_leave(User *user) {
     // 대화방에 미참여한 경우
-    if (current_room_no == ROOM0) {
-        snprintf(buf, sizeof(buf), "You are not in a chatroom.\n");
-        send(user->sock, buf, strlen(buf), 0);
+    if (user->room == NULL) {
+        safe_send(user->sock, "[Server] You are not in any room.\n");
         return -1;
     }
 
-    // 해당 대화방에서 사용자 삭제
-    roominfo_t *room = &rooms[current_room_no - 1];
-    int removed = 0;
-
-    for (int i = 0; i < MAX_CLIENT; i++) {
-        // 현재 대화방에 참여한 사용자일 경우
-        if (room->member[i] == user) {
-            room->member[i] = NULL;
-            removed = 1;
-            break;
-        }
-    }
-
-    if (!removed) {
-        fprintf(stderr, "[Warning] User %s not found in room %d members list\n", user->id, current_room_no);
-    }
-
-    // 사용자의 방 정보 초기화
-    user->chat_room = ROOM0;
-
+    Room *current_room = user->room;
+    broadcast_to_room(current_room, user, "[Server] %s left the room.\n", user->id);
+    // 대화방에서 사용자 제거
+    room_remove_member(current_room, user);
     // 퇴장 메시지 전송
-    snprintf(buf, sizeof(buf), "Exited the chatroom %d(%s)\n", current_room_no, room->room_name);
-    send(user->sock, buf, strlen(buf), 0);
-
-    // 빈 방인지 검사
-    int occupied = 0;
-    for (int i = 0; i <MAX_CLIENT; i++) {
-        if (room->member[i] != NULL) {
-            occupied = 1;
-            break;
-        }
-    }
-
-    if (!occupied) {
-        // 방 삭제
-        for (int i = current_room_no - 1; i < room_num - 1; i++) {
-            rooms[i] = rooms[i + 1];
-            rooms[i].no = i + 1;
-        }
-        room_num--;
-        printf("Room %d removed (empty)\n.", current_room_no);
-    }
-    return 0;
+    printf("[INFO] User %s left room '%s' (ID: %u).\n", user->id, current_room->room_name, current_room->no);
+    safe_send(user->sock, "[Server] You left the room.\n");
+    // 대화방이 비어있으면 제거
+    destroy_room_if_empty(current_room);
 }
 
 // 도움말 출력 함수
-int cmd_help(User *user, char *args) {
-    char buf[512];
-    char line[512];
+void cmd_help(User *user, char *args) {
+    char buf[BUFFER_SIZE];
+    int len = 0;
 
-    snprintf(buf, sizeof(buf), "Available Commands: \n");
+    len = snprintf(buf, sizeof(buf), "Available Commands: \n");
+
     for (int i = 0; cmd_tbl_client[i].cmd != NULL; i++) {
-        snprintf(line, sizeof(line), "%s\t ----- %s\n", cmd_tbl_client[i].cmd, cmd_tbl_client[i].comment);
-        strcat(buf, line);
+        // 남은 버퍼 길이 계산
+        int rem = sizeof(buf) - len;
+        if (rem <= 0) break;
+
+        int written = snprintf(buf + len, rem, "%s\t ----- %s\n", cmd_tbl_client[i].cmd, cmd_tbl_client[i].comment);
+        if (written < 0 || written >= rem) {
+            snprintf(buf + len, rem, "...\n");
+            break;
+        }
+        len += written; // 누적 길이 업데이트
     }
 
-    send(user->sock, buf, strlen(buf), 0);
-    return 0;
+    safe_send(user->sock, buf);
 }
 
 
