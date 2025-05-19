@@ -69,8 +69,8 @@ void cmd_users(User *user);
 void cmd_rooms(int sock);
 void cmd_create(User *creator, const char *room_name);
 void cmd_join(User *user, const char *room_no_str);
-int cmd_join_wrapper(User *user, char *args);
-int cmd_leave(User *user, char *args);
+void cmd_join_wrapper(User *user, char *args);
+void cmd_leave(User *user);
 int cmd_help(User *user, char *args);
 
 void usage_create(User *user);
@@ -329,6 +329,7 @@ void broadcast_to_room(Room *room, User *sender, const char *format, ...) {
 void *client_process(void *args) {
     User *user = (User *)args;
     char buf[BUFFER_SIZE];
+    ssize_t bytes_received;
 
     snprintf(buf, sizeof(buf), "Welcome!\n");
     send(user->sock, buf, strlen(buf), 0);
@@ -638,71 +639,33 @@ void cmd_join(User *user, const char *room_no_str) {
 }
 
 // typedef에서 warning: type allocation error 방지
-int cmd_join_wrapper(User *user, char *args) {
+void cmd_join_wrapper(User *user, char *args) {
     char buf[256];
     if (!args) {
-        usage_enter(user);
+        usage_join(user);
         return -1;
     }
 
     int room_no = atoi(args);
-    return cmd_join(user, room_no);}
+    cmd_join(user, room_no);}
 
 // 현재 대화방 나가기 함수
-int cmd_exit(User *user, char *args) {
-    char buf[128];
-    int current_room_no = user->chat_room;
-    
+void cmd_leave(User *user) {
     // 대화방에 미참여한 경우
-    if (current_room_no == ROOM0) {
-        snprintf(buf, sizeof(buf), "You are not in a chatroom.\n");
-        send(user->sock, buf, strlen(buf), 0);
+    if (user->room == NULL) {
+        safe_send(user->sock, "[Server] You are not in any room.\n");
         return -1;
     }
 
-    // 해당 대화방에서 사용자 삭제
-    roominfo_t *room = &rooms[current_room_no - 1];
-    int removed = 0;
-
-    for (int i = 0; i < MAX_CLIENT; i++) {
-        // 현재 대화방에 참여한 사용자일 경우
-        if (room->member[i] == user) {
-            room->member[i] = NULL;
-            removed = 1;
-            break;
-        }
-    }
-
-    if (!removed) {
-        fprintf(stderr, "[Warning] User %s not found in room %d members list\n", user->id, current_room_no);
-    }
-
-    // 사용자의 방 정보 초기화
-    user->chat_room = ROOM0;
-
+    Room *current_room = user->room;
+    broadcast_to_room(current_room, user, "[Server] %s left the room.\n", user->id);
+    // 대화방에서 사용자 제거
+    room_remove_member(current_room, user);
     // 퇴장 메시지 전송
-    snprintf(buf, sizeof(buf), "Exited the chatroom %d(%s)\n", current_room_no, room->room_name);
-    send(user->sock, buf, strlen(buf), 0);
-
-    // 빈 방인지 검사
-    int occupied = 0;
-    for (int i = 0; i <MAX_CLIENT; i++) {
-        if (room->member[i] != NULL) {
-            occupied = 1;
-            break;
-        }
-    }
-
-    if (!occupied) {
-        // 방 삭제
-        for (int i = current_room_no - 1; i < room_num - 1; i++) {
-            rooms[i] = rooms[i + 1];
-            rooms[i].no = i + 1;
-        }
-        room_num--;
-        printf("Room %d removed (empty)\n.", current_room_no);
-    }
-    return 0;
+    printf("[INFO] User %s left room '%s' (ID: %u).\n", user->id, current_room->room_name, current_room->no);
+    safe_send(user->sock, "[Server] You left the room.\n");
+    // 대화방이 비어있으면 제거
+    destroy_room_if_empty(current_room);
 }
 
 // 도움말 출력 함수
