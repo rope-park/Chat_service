@@ -67,12 +67,14 @@ void process_server_command(int epfd, int server_sock);
 // ==== CLI ====
 void cmd_users(User *user);
 void cmd_rooms(int sock);
+void cmd_id(User *user, const char *args);
 void cmd_create(User *creator, const char *room_name);
 void cmd_join(User *user, const char *room_no_str);
 int cmd_join_wrapper(User *user, char *args);
 int cmd_leave(User *user, char *args);
 int cmd_help(User *user, char *args);
 
+void usage_id(User *user);
 void usage_create(User *user);
 void usage_join(User *user);
 void usage_leave(User *user);
@@ -146,6 +148,7 @@ server_cmd_t cmd_tbl_server[] = {
 client_cmd_t cmd_tbl_client[] = {
     {"/users", cmd_users, NULL, "List all users"},
     {"/rooms", cmd_rooms, NULL, "List all chatrooms"},
+    {"/id", cmd_id, usage_id, "Change your ID(nickname)"},
     {"/create", cmd_create, usage_create, "Create a new chatroom"},
     {"/join", cmd_join_wrapper, usage_join, "Join a chatroom by number"},
     {"/leave", cmd_leave, usage_leave, "Leave current chatroom"},
@@ -782,6 +785,45 @@ void cmd_rooms(int sock) {
     safe_send(sock, room_list);
 }
 
+// ID 변경 함수
+void cmd_id(User *user, const char *args) {
+    // 인자 유효성 검사
+    if (!args ||strlen(*args) == 0) {
+        usage_id(user);
+        return -1;
+    }
+
+    char *new_id = strtok(args, " ");
+    // ID 길이 제한
+    if (new_id == NULL || strlen(new_id) < 2 || strlen(new_id) > 61) {
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "[Server] ID must be 2 ~ 61 characters long.\n");
+        safe_send(user->sock, error_msg);
+        return -1;
+    }
+
+    // ID 중복 체크
+    pthread_mutex_lock(&g_users_mutex);
+    User *existing = find_client_by_id_unlocked(new_id);
+    pthread_mutex_unlock(&g_users_mutex);
+
+    if (existing && existing != user) {
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "[Server] ID '%s' is already taken.\n", new_id);
+        safe_send(user->sock, error_msg);
+        return -1;
+    }
+
+    // ID 변경
+    printf("[INFO] User %s changed ID to %s\n", user->id, new_id);
+    strncpy(user->id, new_id, sizeof(user->id) -1);
+    user->id[sizeof(user->id) - 1] = '\0';
+
+    char success_msg[BUFFER_SIZE];
+    snprintf(success_msg, sizeof(success_msg), "[Server] ID updated to %s.\n", user->id);
+    safe_send(user->sock, success_msg);
+}
+
 // 새 대화방 생성 및 참가 함수
 void cmd_create(User *creator, const char *room_name) {
     // 대화방 이름 유효성 검사
@@ -972,6 +1014,11 @@ int cmd_help(User *user, char *args) {
     return 0;
 }
 
+
+void usage_id(User *user) {
+    char *msg = "Usage: /id <new_id(nickname)>\n";
+    safe_send(user->sock, msg);
+}
 
 void usage_create(User *user) {
     char *msg = "Usage: /create <room_name>\n";
