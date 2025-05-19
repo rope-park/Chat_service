@@ -107,7 +107,7 @@ typedef struct Room {
 static User *g_users = NULL; // 사용자 목록
 static Room *g_rooms = NULL; // 대화방 목록
 static int g_server_sock = -1; // 서버 소켓
-static int g_epdf = -1; // epoll 디스크립터
+static int g_epfd = -1; // epoll 디스크립터
 static unsigned int g_next_room_no = 1; // 다음 대화방 고유 번호
 
 // Mutex 사용하여 스레드 상호 배제를 통해 안전하게 처리
@@ -224,7 +224,7 @@ void server_quit(void) {
     }
     pthread_mutex_unlock(&g_users_mutex);
     
-    close(g_epdf); // epoll 디스크립터 종료
+    close(g_epfd); // epoll 디스크립터 종료
 
     // 사용자 목록 메모리 해제
     pthread_mutex_lock(&g_users_mutex);
@@ -312,9 +312,11 @@ void broadcast_to_room(Room *room, User *sender, const char *format, ...) {
     va_end(args);
 
     pthread_mutex_lock(&g_rooms_mutex);
-    User *member = room->members;
+
     // 대화방 참여자 목록을 순회하며 메시지 전송
-    while (member != NULL) {
+    for (int i = 0; i < room->member_count;i++) {
+        User *member = room->members[i];
+        if (member == NULL || member == sender) continue;
         if (member->sock >= 0) {
             safe_send(member->sock, msg);
         }
