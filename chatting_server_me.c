@@ -71,7 +71,7 @@ void cmd_create(User *creator, const char *room_name);
 void cmd_join(User *user, const char *room_no_str);
 void cmd_join_wrapper(User *user, char *args);
 void cmd_leave(User *user);
-int cmd_help(User *user, char *args);
+void cmd_help(User *user);
 
 void usage_create(User *user);
 void usage_join(User *user);
@@ -669,18 +669,26 @@ void cmd_leave(User *user) {
 }
 
 // 도움말 출력 함수
-int cmd_help(User *user, char *args) {
-    char buf[512];
-    char line[512];
+void cmd_help(User *user) {
+    char buf[BUFFER_SIZE];
+    int len = 0;
 
-    snprintf(buf, sizeof(buf), "Available Commands: \n");
+    len = snprintf(buf, sizeof(buf), "Available Commands: \n");
+
     for (int i = 0; cmd_tbl_client[i].cmd != NULL; i++) {
-        snprintf(line, sizeof(line), "%s\t ----- %s\n", cmd_tbl_client[i].cmd, cmd_tbl_client[i].comment);
-        strcat(buf, line);
+        // 남은 버퍼 길이 계산
+        int rem = sizeof(buf) - len;
+        if (rem <= 0) break;
+
+        int written = snprintf(buf + len, rem, "%s\t ----- %s\n", cmd_tbl_client[i].cmd, cmd_tbl_client[i].comment);
+        if (written < 0 || written >= rem) {
+            snprintf(buf + len, rem, "...\n");
+            break;
+        }
+        len += written; // 누적 길이 업데이트
     }
 
-    send(user->sock, buf, strlen(buf), 0);
-    return 0;
+    safe_send(user->sock, buf);
 }
 
 
