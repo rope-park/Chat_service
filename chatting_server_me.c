@@ -61,7 +61,7 @@ void room_remove_member(Room *room, User *user);
 void destroy_room_if_empty(Room *room);
 // ==== 세션 처리 ====
 void *client_process(void *args);
-void process_server_command(int epfd, int server_sock);
+void process_server_cmd(int epfd, int server_sock);
 
 // ======== 클라이언트부 ========
 // ==== CLI ====
@@ -420,30 +420,43 @@ void *client_process(void *args) {
     }
 }
 
-// cmd별 분기 처리 함수
-void handle_cmd_server(User *user, char *input) {
-    char *cmd = strtok(input, " ");
-    char *args = strtok(NULL, ""); // 나머지 인자
-    char *msg = "Unknown command.";
+// 서버 명령어 처리 함수
+void process_server_cmd(int epfd, int server_sock) {
+    char cmd_buf[64];
 
-    if (!cmd) {
-        printf("Bad server command.\n");
+    // 서버 명령어 입력
+    if (!fgets(cmd_buf, sizeof(cmd_buf) - 1, stdin)) {
+        printf("\n[INFO] Server shutting down... (EOF on stdin).\n");
+        server_quit();
         return;
     }
 
-    // 서버 cmd 처리
+    // 개행 문자 제거
+    cmd_buf[strcspn(cmd_buf, "\r\n")] = '\0';
+
+    // 명령어와 인자 분리
+    char *cmd = strtok(cmd_buf, " ");
+
+    // 인자 처리 - 명령어가 없거나 빈 문자열인 경우
+    if (!cmd || strlen(cmd) == 0) {
+        printf("Bad server command.\n");
+        fflush(stdout); // 버퍼 비우기
+        return;
+    }
+
+    // cmd 테이블을 순회하며 명령어 처리
     for (int i = 0; cmd_tbl_server[i].cmd != NULL; i++) {
         if (strcmp(cmd, cmd_tbl_server[i].cmd) == 0) {
             cmd_tbl_server[i].cmd_func();
+            printf("> ");
+            fflush(stdout);
             return;
         }
     }
 
-    if (user) {
-        send(user->sock, msg, strlen(msg), 0);
-    } else {
-        printf("%s", msg);
-    }
+    // 명령어가 테이블에 없는 경우
+    printf("Unknown server command: %s. Available: users, rooms, quit\n", cmd);
+    fflush(stdout);
 }
 
 
