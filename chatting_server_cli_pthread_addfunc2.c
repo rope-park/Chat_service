@@ -132,20 +132,18 @@ int cmd_help(userinfo_t *user, char *args);
 =======
 void cmd_users(User *user);
 void cmd_rooms(int sock);
+void cmd_id(User *user, const char *args);
 void cmd_create(User *creator, const char *room_name);
 void cmd_join(User *user, const char *room_no_str);
 int cmd_join_wrapper(User *user, char *args);
 int cmd_leave(User *user, char *args);
 int cmd_help(User *user, char *args);
->>>>>>> 13b29ab (Feat: list_add_client_unlocked(), list_remove_client_unlocked() 추가):chatting_server_me.c
 
-void usage_new(userinfo_t *user);
-void usage_start(userinfo_t *user);
-void usage_accept(userinfo_t *user);
-void usage_enter(userinfo_t *user);
-void usage_exit(userinfo_t *user);
-void usage_dm(userinfo_t *user);
-void usage_help(userinfo_t *user);
+void usage_id(User *user);
+void usage_create(User *user);
+void usage_join(User *user);
+void usage_leave(User *user);
+void usage_help(User *user);
 
 // =================== 구조체 ======================
 // User 구조체
@@ -217,13 +215,11 @@ server_cmd_t cmd_tbl_server[] = {
 // command 테이블 (클라이언트)
 client_cmd_t cmd_tbl_client[] = {
     {"/users", cmd_users, NULL, "List all users"},
-    {"/chats", cmd_chats, NULL, "List all chatrooms"},
-    {"/new", cmd_new, usage_new, "Create a new chatroom"},
-    {"/start", cmd_start, usage_start, "Request for 1:1 chat"},
-    {"/accept", cmd_accept, usage_accept, "Accept 1:1 chat request"},
-    {"/enter", cmd_enter_wrapper, usage_enter, "Enter a chatroom by number"},
-    {"/dm", cmd_dm, usage_dm, "Send message to another users"},
-    {"/exit", cmd_exit, usage_exit, "Leave current chatroom"},
+    {"/rooms", cmd_rooms, NULL, "List all chatrooms"},
+    {"/id", cmd_id, usage_id, "Change your ID(nickname)"},
+    {"/create", cmd_create, usage_create, "Create a new chatroom"},
+    {"/join", cmd_join_wrapper, usage_join, "Join a chatroom by number"},
+    {"/leave", cmd_leave, usage_leave, "Leave current chatroom"},
     {"/help", cmd_help, usage_help, "Show all available commands"},
     {NULL, NULL, NULL, NULL},
 };
@@ -814,6 +810,45 @@ void cmd_rooms(int sock) {
     safe_send(sock, room_list);
 }
 
+// ID 변경 함수
+void cmd_id(User *user, const char *args) {
+    // 인자 유효성 검사
+    if (!args ||strlen(*args) == 0) {
+        usage_id(user);
+        return -1;
+    }
+
+    char *new_id = strtok(args, " ");
+    // ID 길이 제한
+    if (new_id == NULL || strlen(new_id) < 2 || strlen(new_id) > 61) {
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "[Server] ID must be 2 ~ 61 characters long.\n");
+        safe_send(user->sock, error_msg);
+        return -1;
+    }
+
+    // ID 중복 체크
+    pthread_mutex_lock(&g_users_mutex);
+    User *existing = find_client_by_id_unlocked(new_id);
+    pthread_mutex_unlock(&g_users_mutex);
+
+    if (existing && existing != user) {
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "[Server] ID '%s' is already taken.\n", new_id);
+        safe_send(user->sock, error_msg);
+        return -1;
+    }
+
+    // ID 변경
+    printf("[INFO] User %s changed ID to %s\n", user->id, new_id);
+    strncpy(user->id, new_id, sizeof(user->id) -1);
+    user->id[sizeof(user->id) - 1] = '\0';
+
+    char success_msg[BUFFER_SIZE];
+    snprintf(success_msg, sizeof(success_msg), "[Server] ID updated to %s.\n", user->id);
+    safe_send(user->sock, success_msg);
+}
+
 // 새 대화방 생성 및 참가 함수
 <<<<<<< HEAD:chatting_server_cli_pthread_addfunc2.c
 int cmd_new(userinfo_t *creator, char *room_name) {
@@ -1141,29 +1176,11 @@ int cmd_help(userinfo_t *user, char *args) {
 }
 
 
-<<<<<<< HEAD:chatting_server_cli_pthread_addfunc2.c
-void usage_new(userinfo_t *user) {
-    char *msg = "Usage: /new <room_name>\n";
-    send(user->sock, msg, strlen(msg), 0);
+void usage_id(User *user) {
+    char *msg = "Usage: /id <new_id(nickname)>\n";
+    safe_send(user->sock, msg);
 }
 
-void usage_start(userinfo_t *user) {
-    char *msg = "Usage: /start <target_user_id>\n";
-    send(user->sock, msg, strlen(msg), 0);
-}
-
-void usage_accept(userinfo_t *user) {
-    char *msg = "Usage: /accept\n";
-    send(user->sock, msg, strlen(msg), 0);
-}
-
-void usage_enter(userinfo_t *user) {
-    char *msg = "Usage: /enter <room_no>\n";
-    send(user->sock, msg, strlen(msg), 0);
-}
-
-void usage_exit(userinfo_t *user) {
-=======
 void usage_create(User *user) {
     char *msg = "Usage: /create <room_name>\n";
     safe_send(user->sock, msg);
