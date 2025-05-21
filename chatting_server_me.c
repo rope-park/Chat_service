@@ -836,21 +836,23 @@ void cmd_users(User *user) {
             member = member->room_user_next;
         }
         pthread_mutex_unlock(&g_rooms_mutex);
+
         strcat(user_list, "\n");
         safe_send(user->sock, user_list);
     } else {
         // 대화방에 참여 중이지 않은 경우
         strcat(user_list, "[Server] Connected users: ");
+
         pthread_mutex_lock(&g_users_mutex);
-        User *user = g_users;
-        while (user != NULL) {
+        while (g_users != NULL) {
             strcat(user_list, user->id);
-            if (user->next != NULL) {
+            if (g_users->next != NULL) {
                 strcat(user_list, ", ");
             }
-            user = user->next;
+            g_users = g_users->next;
         }
         pthread_mutex_unlock(&g_users_mutex);
+
         strcat(user_list, "\n");
         safe_send(user->sock, user_list);
     }
