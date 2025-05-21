@@ -166,7 +166,7 @@ client_cmd_t cmd_tbl_client[] = {
 void server_user(void) {
     pthread_mutex_lock(&g_users_mutex);
 
-    printf("%2s\t%16s\t%20s\n", "g_server_sock", "ID", "ROOM");
+    printf("%2s\t%16s\t%20s\n", "sock_no", "ID", "ROOM");
     printf("=========================================================\n");
 
     // 사용자 목록을 순회하며 정보 출력
@@ -828,34 +828,32 @@ void cmd_users(User *user) {
         pthread_mutex_lock(&g_rooms_mutex);
         User *member = user->room->members[0];
         // 대화방 참여자 목록을 순회하며 사용자 ID 전송
-        while (member != NULL) {
+        while (member) {
             strcat(user_list, member->id);
-            if (member->room_user_next != NULL) {
+            if (member->room_user_next) {
                 strcat(user_list, ", ");
             }
             member = member->room_user_next;
         }
         pthread_mutex_unlock(&g_rooms_mutex);
-
-        strcat(user_list, "\n");
-        safe_send(user->sock, user_list);
     } else {
-        // 대화방에 참여 중이지 않은 경우
+        // 대화방에 참여 중이지 않은 경우 (로비)
         strcat(user_list, "[Server] Connected users: ");
 
         pthread_mutex_lock(&g_users_mutex);
-        while (g_users != NULL) {
-            strcat(user_list, user->id);
-            if (g_users->next != NULL) {
+        User *iter = g_users;
+        while (iter) {
+            strcat(user_list, iter->id);
+            if (iter->next) {
                 strcat(user_list, ", ");
             }
-            g_users = g_users->next;
+            iter = iter->next;
         }
         pthread_mutex_unlock(&g_users_mutex);
-
-        strcat(user_list, "\n");
-        safe_send(user->sock, user_list);
     }
+    
+    strcat(user_list, "\n");
+    safe_send(user->sock, user_list);
 }
 
 // typedef에서 warning: type allocation error 방지
