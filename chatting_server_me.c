@@ -35,6 +35,7 @@ typedef struct User {
 typedef struct Room {
     char room_name[64];                 // 방 이름
     unsigned int no;                    // 방 고유 번호
+    User *manager;                      // 방장
     User *members[MAX_CLIENT];          // 방에 참여중인 멤버 목록
     int member_count;                   // 생에 참여중인 멤버 수
     struct Room *next;                  // 다음 방 포인터
@@ -104,6 +105,9 @@ void cmd_users_wrapper(User *user, char *args);
 void cmd_rooms(int sock);
 void cmd_rooms_wrapper(User *user, char *args);
 void cmd_id(User *user, char *args);
+void cmd_manager(User *user, char *user_id);
+void cmd_change(User *user, char *room_name);
+void cmd_kick(User *user, char *user_id);
 void cmd_create(User *creator, char *room_name);
 void cmd_join(User *user, char *room_no_str);
 void cmd_join_wrapper(User *user, char *args);
@@ -113,6 +117,9 @@ void cmd_help(User *user);
 void cmd_help_wrapper(User *user, char *args);
 
 void usage_id(User *user);
+void usage_manager(User *user);
+void usage_change(User *user);
+void usage_kick(User *user);
 void usage_create(User *user);
 void usage_join(User *user);
 void usage_leave(User *user);
@@ -151,6 +158,9 @@ client_cmd_t cmd_tbl_client[] = {
     {"/users", cmd_users_wrapper, NULL, "List all users"},
     {"/rooms", cmd_rooms_wrapper, NULL, "List all chatrooms"},
     {"/id", cmd_id, usage_id, "Change your ID(nickname)"},
+    {"/manager", cmd_manager, usage_manager, "Change room manager"},
+    {"/change", cmd_change, usage_change, "Change room name"},
+    {"/kick", cmd_kick, usage_kick, "Kick users from the room"},
     {"/create", cmd_create, usage_create, "Create a new chatroom"},
     {"/join", cmd_join_wrapper, usage_join, "Join a chatroom by number"},
     {"/leave", cmd_leave_wrapper, usage_leave, "Leave current chatroom"},
@@ -712,6 +722,21 @@ void *client_process(void *args) {
             else if (strcmp(cmd, "id") == 0) {
                 cmd_id(user, args);
             }
+
+            // 방장 변경
+            else if (strcmp(cmd, "manager") == 0) {
+                cmd_manager(user, args);
+            }
+
+            // 방 이름 변경
+            else if (strcmp(cmd, "change") == 0) {
+                cmd_change(user, args);
+            }
+
+            // 사용자 강퇴
+            else if (strcmp(cmd, "kick") == 0) {
+                cmd_kick(user, args);
+            }
         
             // 사용자 목록
             else if (strcmp(cmd, "users") == 0) {
@@ -949,6 +974,65 @@ void cmd_id(User *user, char *args) {
     safe_send(user->sock, success_msg);
 }
 
+// 방장 변경 함수
+void cmd_manager(User *user, char *user_id) {
+    // 사용자가 대화방에 참여 중인지 확인
+    if (!user->room) {
+        safe_send(user->sock, "[Server] You are not in a room.\n");
+        return;
+    }
+
+    Room *r = user->room;
+    // 방장 권한 확인
+    if (user != r->manager) {
+        safe_send(user->sock, "[Server] Only the room manager can change the manager.\n");
+        return;
+    }
+
+    // 인자 유효성 검사
+    if (!user_id || strlen(user_id) == 0) {
+        usage_manager(user);
+        return;
+    }
+
+    // 사용자 ID 검색
+    pthread_mutex_lock(&g_users_mutex);
+    User *target_user = find_client_by_id_unlocked(user_id);
+    pthread_mutex_unlock(&g_users_mutex);
+
+    // 사용자 존재 여부 확인
+    if (!target_user) {
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "[Server] User '%s' is not in this room.\n", target_user->id);
+        safe_send(user->sock, error_msg);
+        return;
+    }
+
+    // 본인에게 방장 권한 부여 시도
+    if (target_user == user) {
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "[Server] You can not make yourself the manager.\n");
+        safe_send(user->sock, error_msg);
+        return;
+    }
+
+    // 방장 변경
+    r->manager = target_user;
+    char success_msg[BUFFER_SIZE];
+    snprintf(success_msg, sizeof(success_msg), "[Server] User '%s' is now the manager of room '%s'.\n", target_user->id, r->room_name);
+    broadcast_to_room(r, NULL, "%s", success_msg);
+}
+
+// 방 이름 변경 함수
+void cmd_change(User *user, char *room_name) {
+
+}
+
+// 특정 유저 강제퇴장 함수
+void cmd_kick(User *user, char *user_id) {
+
+}
+
 // 새 대화방 생성 및 참가 함수
 void cmd_create(User *creator, char *room_name) {
     // 대화방 이름 유효성 검사
@@ -1064,7 +1148,6 @@ void cmd_join_wrapper(User *user, char *args) {
         usage_join(user);
         return;
     }
-
     cmd_join(user, args);
 }
 
@@ -1124,6 +1207,21 @@ void cmd_help_wrapper(User *user, char *args) {
 
 void usage_id(User *user) {
     char *msg = "Usage: /id <new_id(nickname)>\n";
+    safe_send(user->sock, msg);
+}
+
+void usage_manager(User *user) {
+    char *msg = "Usage: /manager <user_id>\n";
+    safe_send(user->sock, msg);
+}
+
+void usage_change(User *user) {
+    char *msg = "Usage: /change <room_name>\n";
+    safe_send(user->sock, msg);
+}
+
+void usage_kick(User *user) {
+    char *msg = "Usage: /kick <user_id>\n";
     safe_send(user->sock, msg);
 }
 
