@@ -186,7 +186,7 @@ void server_user(void) {
 void server_room(void) {
     pthread_mutex_lock(&g_rooms_mutex);
 
-    printf("%4s\t%20s\t%20s\t%8s\t%s\n", "ID", "ROOM NAME", "CREATED TIME", "#USER", "MEMBER");
+    printf("%4s\t%20s\t%20s\t%8s\t%s\n", "ROOM ID", "ROOM NAME", "CREATED TIME", "#USER", "MEMBER");
     printf("=======================================================================\n");
 
     // 대화방 목록을 순회하며 정보 출력
@@ -997,6 +997,7 @@ void cmd_create(User *creator, char *room_name) {
     strncpy(new_room->room_name, room_name, sizeof(new_room->room_name) - 1);
     new_room->room_name[sizeof(new_room->room_name) - 1] = '\0';
     new_room->no = new_room_no;
+    new_room->created_time = time(NULL);
     memset(new_room->members, 0, sizeof(new_room->members));
     new_room->member_count = 0;
     new_room->next = NULL;
