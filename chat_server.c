@@ -1048,7 +1048,40 @@ void cmd_manager(User *user, char *user_id) {
 
 // 방 이름 변경 함수
 void cmd_change(User *user, char *room_name) {
+    // 사용자가 대화방에 참여 중인지 확인
+    if (!user->room) {
+        safe_send(user->sock, "[Server] You are not in a room.\n");
+        return;
+    }
 
+    Room *r = user->room;
+    // 방장 권한 확인
+    if (user != r->manager) {
+        safe_send(user->sock, "[Server] Only the room manager can change the room name.\n");
+        return;
+    }
+
+    // 인자 유효성 검사
+    if (!room_name || strlen(room_name) == 0) {
+        usage_change(user);
+        return;
+    }
+
+    // 대화방 이름 길이 제한
+    if (strlen(room_name) >= sizeof(r->room_name)) {
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "[Server] Room name too long (max %zu characters).\n", sizeof(r->room_name) - 1);
+        safe_send(user->sock, error_msg);
+        return;
+    }
+
+    // 대화방 이름 변경
+    strncpy(r->room_name, room_name, sizeof(r->room_name) - 1);
+    r->room_name[sizeof(r->room_name) - 1] = '\0';
+
+    char success_msg[BUFFER_SIZE];
+    snprintf(success_msg, sizeof(success_msg), "[Server] Room name changed to '%s'.\n", r->room_name);
+    broadcast_to_room(r, NULL, "%s", success_msg);
 }
 
 // 특정 유저 강제퇴장 함수
