@@ -35,6 +35,7 @@ typedef struct User {
 typedef struct Room {
     char room_name[64];                 // 방 이름
     unsigned int no;                    // 방 고유 번호
+    User *manager;                      // 방장
     User *members[MAX_CLIENT];          // 방에 참여중인 멤버 목록
     int member_count;                   // 생에 참여중인 멤버 수
     struct Room *next;                  // 다음 방 포인터
@@ -104,6 +105,9 @@ void cmd_users_wrapper(User *user, char *args);
 void cmd_rooms(int sock);
 void cmd_rooms_wrapper(User *user, char *args);
 void cmd_id(User *user, char *args);
+void cmd_manager(User *user, char *user_id);
+void cmd_change(User *user, char *room_name);
+void cmd_kick(User *user, char *user_id);
 void cmd_create(User *creator, char *room_name);
 void cmd_join(User *user, char *room_no_str);
 void cmd_join_wrapper(User *user, char *args);
@@ -113,6 +117,9 @@ void cmd_help(User *user);
 void cmd_help_wrapper(User *user, char *args);
 
 void usage_id(User *user);
+void usage_manager(User *user);
+void usage_change(User *user);
+void usage_kick(User *user);
 void usage_create(User *user);
 void usage_join(User *user);
 void usage_leave(User *user);
@@ -151,6 +158,9 @@ client_cmd_t cmd_tbl_client[] = {
     {"/users", cmd_users_wrapper, NULL, "List all users"},
     {"/rooms", cmd_rooms_wrapper, NULL, "List all chatrooms"},
     {"/id", cmd_id, usage_id, "Change your ID(nickname)"},
+    {"/manager", cmd_manager, usage_manager, "Change room manager"},
+    {"/change", cmd_change, usage_change, "Change room name"},
+    {"/kick", cmd_kick, usage_kick, "Kick users from the room"},
     {"/create", cmd_create, usage_create, "Create a new chatroom"},
     {"/join", cmd_join_wrapper, usage_join, "Join a chatroom by number"},
     {"/leave", cmd_leave_wrapper, usage_leave, "Leave current chatroom"},
@@ -166,7 +176,7 @@ client_cmd_t cmd_tbl_client[] = {
 void server_user(void) {
     pthread_mutex_lock(&g_users_mutex);
 
-    printf("%2s\t%16s\t%20s\n", "g_server_sock", "ID", "ROOM");
+    printf("%2s\t%16s\t%20s\n", "sock_no", "ID", "ROOM");
     printf("=========================================================\n");
 
     // 사용자 목록을 순회하며 정보 출력
@@ -186,7 +196,7 @@ void server_user(void) {
 void server_room(void) {
     pthread_mutex_lock(&g_rooms_mutex);
 
-    printf("%4s\t%20s\t%20s\t%8s\t%s\n", "ID", "ROOM NAME", "CREATED TIME", "#USER", "MEMBER");
+    printf("%4s\t%20s\t%20s\t%8s\t%s\n", "ROOM ID", "ROOM NAME", "CREATED TIME", "#USER", "MEMBER");
     printf("=======================================================================\n");
 
     // 대화방 목록을 순회하며 정보 출력
@@ -712,6 +722,21 @@ void *client_process(void *args) {
             else if (strcmp(cmd, "id") == 0) {
                 cmd_id(user, args);
             }
+
+            // 방장 변경
+            else if (strcmp(cmd, "manager") == 0) {
+                cmd_manager(user, args);
+            }
+
+            // 방 이름 변경
+            else if (strcmp(cmd, "change") == 0) {
+                cmd_change(user, args);
+            }
+
+            // 사용자 강퇴
+            else if (strcmp(cmd, "kick") == 0) {
+                cmd_kick(user, args);
+            }
         
             // 사용자 목록
             else if (strcmp(cmd, "users") == 0) {
@@ -828,32 +853,32 @@ void cmd_users(User *user) {
         pthread_mutex_lock(&g_rooms_mutex);
         User *member = user->room->members[0];
         // 대화방 참여자 목록을 순회하며 사용자 ID 전송
-        while (member != NULL) {
+        while (member) {
             strcat(user_list, member->id);
-            if (member->room_user_next != NULL) {
+            if (member->room_user_next) {
                 strcat(user_list, ", ");
             }
             member = member->room_user_next;
         }
         pthread_mutex_unlock(&g_rooms_mutex);
-        strcat(user_list, "\n");
-        safe_send(user->sock, user_list);
     } else {
-        // 대화방에 참여 중이지 않은 경우
+        // 대화방에 참여 중이지 않은 경우 (로비)
         strcat(user_list, "[Server] Connected users: ");
+
         pthread_mutex_lock(&g_users_mutex);
-        User *user = g_users;
-        while (user != NULL) {
-            strcat(user_list, user->id);
-            if (user->next != NULL) {
+        User *iter = g_users;
+        while (iter) {
+            strcat(user_list, iter->id);
+            if (iter->next) {
                 strcat(user_list, ", ");
             }
-            user = user->next;
+            iter = iter->next;
         }
         pthread_mutex_unlock(&g_users_mutex);
-        strcat(user_list, "\n");
-        safe_send(user->sock, user_list);
     }
+    
+    strcat(user_list, "\n");
+    safe_send(user->sock, user_list);
 }
 
 // typedef에서 warning: type allocation error 방지
@@ -949,6 +974,142 @@ void cmd_id(User *user, char *args) {
     safe_send(user->sock, success_msg);
 }
 
+// 방장 변경 함수
+void cmd_manager(User *user, char *user_id) {
+    // 사용자가 대화방에 참여 중인지 확인
+    if (!user->room) {
+        safe_send(user->sock, "[Server] You are not in a room.\n");
+        return;
+    }
+
+    Room *r = user->room;
+    // 방장 권한 확인
+    if (user != r->manager) {
+        safe_send(user->sock, "[Server] Only the room manager can change the manager.\n");
+        return;
+    }
+
+    // 인자 유효성 검사
+    if (!user_id || strlen(user_id) == 0) {
+        usage_manager(user);
+        return;
+    }
+
+    // 사용자 ID 검색
+    pthread_mutex_lock(&g_users_mutex);
+    User *target_user = find_client_by_id_unlocked(user_id);
+    pthread_mutex_unlock(&g_users_mutex);
+
+    // 사용자 존재 여부 확인
+    if (!target_user) {
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "[Server] User '%s' is not in this room.\n", target_user->id);
+        safe_send(user->sock, error_msg);
+        return;
+    }
+
+    // 본인에게 방장 권한 부여 시도
+    if (target_user == user) {
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "[Server] You can not make yourself the manager.\n");
+        safe_send(user->sock, error_msg);
+        return;
+    }
+
+    // 방장 변경
+    r->manager = target_user;
+    char success_msg[BUFFER_SIZE];
+    snprintf(success_msg, sizeof(success_msg), "[Server] User '%s' is now the manager of room '%s'.\n", target_user->id, r->room_name);
+    broadcast_to_room(r, NULL, "%s", success_msg);
+}
+
+// 방 이름 변경 함수
+void cmd_change(User *user, char *room_name) {
+    // 사용자가 대화방에 참여 중인지 확인
+    if (!user->room) {
+        safe_send(user->sock, "[Server] You are not in a room.\n");
+        return;
+    }
+
+    Room *r = user->room;
+    // 방장 권한 확인
+    if (user != r->manager) {
+        safe_send(user->sock, "[Server] Only the room manager can change the room name.\n");
+        return;
+    }
+
+    // 인자 유효성 검사
+    if (!room_name || strlen(room_name) == 0) {
+        usage_change(user);
+        return;
+    }
+
+    // 대화방 이름 길이 제한
+    if (strlen(room_name) >= sizeof(r->room_name)) {
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "[Server] Room name too long (max %zu characters).\n", sizeof(r->room_name) - 1);
+        safe_send(user->sock, error_msg);
+        return;
+    }
+
+    // 대화방 이름 변경
+    strncpy(r->room_name, room_name, sizeof(r->room_name) - 1);
+    r->room_name[sizeof(r->room_name) - 1] = '\0';
+
+    char success_msg[BUFFER_SIZE];
+    snprintf(success_msg, sizeof(success_msg), "[Server] Room name changed to '%s'.\n", r->room_name);
+    broadcast_to_room(r, NULL, "%s", success_msg);
+}
+
+// 특정 유저 강제퇴장 함수
+void cmd_kick(User *user, char *user_id) {
+    // 사용자가 대화방에 참여 중인지 확인
+    if (!user->room) {
+        safe_send(user->sock, "[Server] You are not in a room.\n");
+        return;
+    }
+
+    Room *r = user->room;
+    // 방장 권한 확인
+    if (user != r->manager) {
+        safe_send(user->sock, "[Server] Only the room manger can kick users.\n");
+        return;
+    }
+
+    // 인자 유효성 검사
+    if (!user_id || strlen(user_id) == 0) {
+        usage_kick(user);
+        return;
+    }
+    
+    // 사용자 ID 검색
+    pthread_mutex_lock(&g_users_mutex);
+    User *target_user = find_users_by_id_unlocked(user_id);
+    pthread_mutex_unlock(&g_users_mutex);
+
+    // 대화방에 참여 중인 사용자 검색
+    if (!target_user) {
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "[Server] User '%s' is not in this room.\n", target_user->id);
+        safe_send(user->sock, error_msg);
+        return;
+    }
+
+    // 본인에게 강퇴 시도
+    if (target_user == user) {
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "[Server] You can not kick yourself.\n");
+        safe_send(user->sock, error_msg);
+        return;
+    }
+
+    // 대화방에서 사용자 제거
+    room_remove_member(r, target_user);
+    char success_msg[BUFFER_SIZE];
+    snprintf(success_msg, sizeof(success_msg), "[Server] User '%s' has been kicked from room '%s'.\n", target_user->id, r->room_name);
+    broadcast_to_room(r, NULL, "%s", success_msg);
+}
+
 // 새 대화방 생성 및 참가 함수
 void cmd_create(User *creator, char *room_name) {
     // 대화방 이름 유효성 검사
@@ -995,6 +1156,7 @@ void cmd_create(User *creator, char *room_name) {
     strncpy(new_room->room_name, room_name, sizeof(new_room->room_name) - 1);
     new_room->room_name[sizeof(new_room->room_name) - 1] = '\0';
     new_room->no = new_room_no;
+    new_room->created_time = time(NULL);
     memset(new_room->members, 0, sizeof(new_room->members));
     new_room->member_count = 0;
     new_room->next = NULL;
@@ -1063,7 +1225,6 @@ void cmd_join_wrapper(User *user, char *args) {
         usage_join(user);
         return;
     }
-
     cmd_join(user, args);
 }
 
@@ -1123,6 +1284,21 @@ void cmd_help_wrapper(User *user, char *args) {
 
 void usage_id(User *user) {
     char *msg = "Usage: /id <new_id(nickname)>\n";
+    safe_send(user->sock, msg);
+}
+
+void usage_manager(User *user) {
+    char *msg = "Usage: /manager <user_id>\n";
+    safe_send(user->sock, msg);
+}
+
+void usage_change(User *user) {
+    char *msg = "Usage: /change <room_name>\n";
+    safe_send(user->sock, msg);
+}
+
+void usage_kick(User *user) {
+    char *msg = "Usage: /kick <user_id>\n";
     safe_send(user->sock, msg);
 }
 
