@@ -1013,12 +1013,18 @@ void cmd_manager(User *user, char *user_id) {
     }
 
     // 사용자 ID 검색
-    pthread_mutex_lock(&g_users_mutex);
-    User *target_user = find_client_by_id_unlocked(user_id);
-    pthread_mutex_unlock(&g_users_mutex);
+    User *target_user = find_client_by_id(user_id);
 
     // 사용자 존재 여부 확인
-    if (!target_user || target_user->room != r) {
+    if (!target_user) {
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "[Server] No such User: '%s'.\n", user_id);
+        safe_send(user->sock, error_msg);
+        return;
+    }
+    
+    // 대화방에 참여 중인지 확인
+    if (target_user->room != r) {
         char error_msg[BUFFER_SIZE];
         snprintf(error_msg, sizeof(error_msg), "[Server] User '%s' is not in this room.\n", target_user->id);
         safe_send(user->sock, error_msg);
@@ -1028,7 +1034,7 @@ void cmd_manager(User *user, char *user_id) {
     // 본인에게 방장 권한 부여 시도
     if (target_user == user) {
         char error_msg[BUFFER_SIZE];
-        snprintf(error_msg, sizeof(error_msg), "[Server] You can not make yourself the manager.\n");
+        snprintf(error_msg, sizeof(error_msg), "[Server] You cannot make yourself the manager.\n");
         safe_send(user->sock, error_msg);
         return;
     }
