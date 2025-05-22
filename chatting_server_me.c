@@ -504,6 +504,22 @@ void room_remove_member_unlocked(Room *room, User *user) {
     if (user->room_user_next != NULL) {
         user->room_user_next->room_user_prev = user->room_user_prev;
     }
+
+    // 배열 인덱스 땡기기
+    int idx = -1;
+    for (int i = 0; i < room->member_count; i++) {
+        if (room->members[i] == user) {
+            idx = i;
+            break;
+        }
+    }
+    if (idx != -1) {
+        for (int j = idx; j < room->member_count - 1; j++) {
+            room->members[j] = room->members[j + 1];
+        }
+        room->members[room->member_count - 1] = NULL; // 마지막 요소 NULL로 설정
+    }
+
     user->room_user_prev = NULL;
     user->room_user_next = NULL;
     user->room = NULL; // 사용자 구조체에 대화방 정보 초기화
