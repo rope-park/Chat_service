@@ -1037,15 +1037,16 @@ void cmd_change(User *user, char *room_name) {
         safe_send(user->sock, "[Server] Only the room manager can change the room name.\n");
         return;
     }
-
+    
+    size_t len = strlen(room_name);
     // 인자 유효성 검사
-    if (!room_name || strlen(room_name) == 0) {
+    if (!room_name || len == 0) {
         usage_change(user);
         return;
     }
-
+    
     // 대화방 이름 길이 제한
-    if (strlen(room_name) >= sizeof(r->room_name)) {
+    if (len >= sizeof(r->room_name)) {
         char error_msg[BUFFER_SIZE];
         snprintf(error_msg, sizeof(error_msg), "[Server] Room name too long (max %zu characters).\n", sizeof(r->room_name) - 1);
         safe_send(user->sock, error_msg);
@@ -1053,9 +1054,11 @@ void cmd_change(User *user, char *room_name) {
     }
 
     // 대화방 이름 변경
+    pthread_mutex_lock(&g_rooms_mutex);
     strncpy(r->room_name, room_name, sizeof(r->room_name) - 1);
     r->room_name[sizeof(r->room_name) - 1] = '\0';
-
+    pthread_mutex_unlock(&g_rooms_mutex);
+    
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] Room name changed to '%s'.\n", r->room_name);
     broadcast_to_room(r, NULL, "%s", success_msg);
