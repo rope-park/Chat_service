@@ -32,6 +32,7 @@ vgcore.*
 
 # ====== React/TypeScript(PWA) ======
 # 빌드 출력물
+output/
 node_modules/
 build/
 dist/
