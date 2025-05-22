@@ -1090,7 +1090,7 @@ void cmd_kick(User *user, char *user_id) {
     
     // 사용자 ID 검색
     pthread_mutex_lock(&g_users_mutex);
-    User *target_user = find_users_by_id_unlocked(user_id);
+    User *target_user = find_client_by_id_unlocked(user_id);
     pthread_mutex_unlock(&g_users_mutex);
 
     // 대화방에 참여 중인 사용자 검색
