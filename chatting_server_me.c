@@ -1124,12 +1124,18 @@ void cmd_kick(User *user, char *user_id) {
         safe_send(user->sock, error_msg);
         return;
     }
- 
+
+    // 강퇴된 사용자에게 메시지 전송
+    safe_send(target_user->sock, "[Server] You have been kicked from the room.\n");
+
     // 대화방에서 사용자 제거
+    pthread_mutex_lock(&g_rooms_mutex);
     room_remove_member(r, target_user);
+    pthread_mutex_unlock(&g_rooms_mutex);
+
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] User '%s' has been kicked from room '%s'.\n", target_user->id, r->room_name);
-    broadcast_to_room(r, NULL, "%s", success_msg);
+    broadcast_to_room(r, target_user, "%s", success_msg);
 }
 
 // 새 대화방 생성 및 참가 함수
