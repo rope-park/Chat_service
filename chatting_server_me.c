@@ -1109,8 +1109,16 @@ void cmd_kick(User *user, char *user_id) {
     User *target_user = find_client_by_id_unlocked(user_id);
     pthread_mutex_unlock(&g_users_mutex);
 
-    // 대화방에 참여 중인 사용자 검색
-    if (!target_user || target_user->room != r) {
+    // 사용자 존재 여부 확인
+    if (!target_user) {
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "[Server] No such User: '%s'.\n", user_id);
+        safe_send(user->sock, error_msg);
+        return;
+    }
+
+    // 대화방에 참여 중인지 확인
+    if (target_user->room != r) {
         char error_msg[BUFFER_SIZE];
         snprintf(error_msg, sizeof(error_msg), "[Server] User '%s' is not in this room.\n", target_user->id);
         safe_send(user->sock, error_msg);
@@ -1129,9 +1137,7 @@ void cmd_kick(User *user, char *user_id) {
     safe_send(target_user->sock, "[Server] You have been kicked from the room.\n");
 
     // 대화방에서 사용자 제거
-    pthread_mutex_lock(&g_rooms_mutex);
     room_remove_member(r, target_user);
-    pthread_mutex_unlock(&g_rooms_mutex);
 
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] User '%s' has been kicked from room '%s'.\n", target_user->id, r->room_name);
