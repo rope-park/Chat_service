@@ -196,7 +196,7 @@ void server_user(void) {
 void server_room(void) {
     pthread_mutex_lock(&g_rooms_mutex);
 
-    printf("%4s%20s\t%12s\t%8s\t%s\n", "ROOM ID", "ROOM NAME", "CREATED TIME", "#USER", "MEMBER");
+    printf("%4s%20s\t%12s%8s\t%s\n", "ROOM ID", "ROOM NAME", "CREATED TIME", "#USER", "MEMBER");
     printf("==============================================================================================================\n");
 
     // 대화방 목록을 순회하며 정보 출력
@@ -206,7 +206,7 @@ void server_room(void) {
         struct tm *tm_info = localtime((time_t *)&r->created_time);
         strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
         // 대화방 정보 출력
-        printf("%4u%20s\t%12s\t%8d\t",
+        printf("%4u%20s\t%12s%8d\t",
                 r->no,               // 방 번호
                 r->room_name,        // 방 이름
                 time_str,            // 방 생성 시간
@@ -334,11 +334,10 @@ void broadcast_to_room(Room *room, User *sender, const char *format, ...) {
 
     pthread_mutex_lock(&g_rooms_mutex);
 
+    User *member = room->members[0]; // 대화방 참여자 목록의 첫 번째 사용자
     // 대화방 참여자 목록을 순회하며 메시지 전송
-    for (int i = 0; i < room->member_count;i++) {
-        User *member = room->members[i];
-        if (member == NULL || member == sender) continue;
-        if (member->sock >= 0) {
+    while (member != NULL) {
+        if (member != sender && member->sock >= 0) {
             safe_send(member->sock, msg);
         }
         member = member->room_user_next;
