@@ -1088,7 +1088,7 @@ void cmd_kick(User *user, char *user_id) {
     pthread_mutex_unlock(&g_users_mutex);
 
     // 대화방에 참여 중인 사용자 검색
-    if (!target_user) {
+    if (!target_user || target_user->room != r) {
         char error_msg[BUFFER_SIZE];
         snprintf(error_msg, sizeof(error_msg), "[Server] User '%s' is not in this room.\n", target_user->id);
         safe_send(user->sock, error_msg);
@@ -1098,16 +1098,16 @@ void cmd_kick(User *user, char *user_id) {
     // 본인에게 강퇴 시도
     if (target_user == user) {
         char error_msg[BUFFER_SIZE];
-        snprintf(error_msg, sizeof(error_msg), "[Server] You can not kick yourself.\n");
+        snprintf(error_msg, sizeof(error_msg), "[Server] You cannot kick yourself.\n");
         safe_send(user->sock, error_msg);
         return;
     }
-
+ 
     // 대화방에서 사용자 제거
-    room_remove_member(r, target_user);
-    char success_msg[BUFFER_SIZE];
-    snprintf(success_msg, sizeof(success_msg), "[Server] User '%s' has been kicked from room '%s'.\n", target_user->id, r->room_name);
-    broadcast_to_room(r, NULL, "%s", success_msg);
+        room_remove_member(r, target_user);
+        char success_msg[BUFFER_SIZE];
+        snprintf(success_msg, sizeof(success_msg), "[Server] User '%s' has been kicked from room '%s'.\n", target_user->id, r->room_name);
+        broadcast_to_room(r, NULL, "%s", success_msg);
 }
 
 // 새 대화방 생성 및 참가 함수
