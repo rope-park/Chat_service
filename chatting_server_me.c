@@ -989,8 +989,9 @@ void cmd_manager(User *user, char *user_id) {
         return;
     }
 
+    size_t len = strlen(user_id);
     // 인자 유효성 검사
-    if (!user_id || strlen(user_id) == 0) {
+    if (!user_id || len == 0) {
         usage_manager(user);
         return;
     }
@@ -1001,7 +1002,7 @@ void cmd_manager(User *user, char *user_id) {
     pthread_mutex_unlock(&g_users_mutex);
 
     // 사용자 존재 여부 확인
-    if (!target_user) {
+    if (!target_user || target_user->room != r) {
         char error_msg[BUFFER_SIZE];
         snprintf(error_msg, sizeof(error_msg), "[Server] User '%s' is not in this room.\n", target_user->id);
         safe_send(user->sock, error_msg);
@@ -1017,10 +1018,12 @@ void cmd_manager(User *user, char *user_id) {
     }
 
     // 방장 변경
+    pthread_mutex_lock(&g_rooms_mutex);
     r->manager = target_user;
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] User '%s' is now the manager of room '%s'.\n", target_user->id, r->room_name);
     broadcast_to_room(r, NULL, "%s", success_msg);
+    pthread_mutex_unlock(&g_rooms_mutex);
 }
 
 // 방 이름 변경 함수
@@ -1058,7 +1061,7 @@ void cmd_change(User *user, char *room_name) {
     strncpy(r->room_name, room_name, sizeof(r->room_name) - 1);
     r->room_name[sizeof(r->room_name) - 1] = '\0';
     pthread_mutex_unlock(&g_rooms_mutex);
-    
+
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] Room name changed to '%s'.\n", r->room_name);
     broadcast_to_room(r, NULL, "%s", success_msg);
