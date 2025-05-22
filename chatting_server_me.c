@@ -196,8 +196,8 @@ void server_user(void) {
 void server_room(void) {
     pthread_mutex_lock(&g_rooms_mutex);
 
-    printf("%4s\t%20s\t%20s\t%8s\t%s\n", "ROOM ID", "ROOM NAME", "CREATED TIME", "#USER", "MEMBER");
-    printf("=======================================================================\n");
+    printf("%4s%20s\t%12s\t%8s\t%s\n", "ROOM ID", "ROOM NAME", "CREATED TIME", "#USER", "MEMBER");
+    printf("==============================================================================================================\n");
 
     // 대화방 목록을 순회하며 정보 출력
     for (Room *r = g_rooms; r != NULL; r = r->next) {
@@ -206,7 +206,7 @@ void server_room(void) {
         struct tm *tm_info = localtime((time_t *)&r->created_time);
         strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
         // 대화방 정보 출력
-        printf("%4u\t%20s\t%20s\t%8d\t",
+        printf("%4u%20s\t%12s\t%8d\t",
                 r->no,               // 방 번호
                 r->room_name,        // 방 이름
                 time_str,            // 방 생성 시간
@@ -1020,10 +1020,10 @@ void cmd_manager(User *user, char *user_id) {
     // 방장 변경
     pthread_mutex_lock(&g_rooms_mutex);
     r->manager = target_user;
+    pthread_mutex_unlock(&g_rooms_mutex);
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] User '%s' is now the manager of room '%s'.\n", target_user->id, r->room_name);
     broadcast_to_room(r, NULL, "%s", success_msg);
-    pthread_mutex_unlock(&g_rooms_mutex);
 }
 
 // 방 이름 변경 함수
@@ -1090,7 +1090,7 @@ void cmd_kick(User *user, char *user_id) {
     
     // 사용자 ID 검색
     pthread_mutex_lock(&g_users_mutex);
-    User *target_user = find_client_by_id_unlocked(user_id);
+    User *target_user = find_users_by_id_unlocked(user_id);
     pthread_mutex_unlock(&g_users_mutex);
 
     // 대화방에 참여 중인 사용자 검색
@@ -1110,10 +1110,10 @@ void cmd_kick(User *user, char *user_id) {
     }
  
     // 대화방에서 사용자 제거
-        room_remove_member(r, target_user);
-        char success_msg[BUFFER_SIZE];
-        snprintf(success_msg, sizeof(success_msg), "[Server] User '%s' has been kicked from room '%s'.\n", target_user->id, r->room_name);
-        broadcast_to_room(r, NULL, "%s", success_msg);
+    room_remove_member(r, target_user);
+    char success_msg[BUFFER_SIZE];
+    snprintf(success_msg, sizeof(success_msg), "[Server] User '%s' has been kicked from room '%s'.\n", target_user->id, r->room_name);
+    broadcast_to_room(r, NULL, "%s", success_msg);
 }
 
 // 새 대화방 생성 및 참가 함수
@@ -1164,6 +1164,7 @@ void cmd_create(User *creator, char *room_name) {
     new_room->no = new_room_no;
     new_room->created_time = time(NULL);
     memset(new_room->members, 0, sizeof(new_room->members));
+    new_room->manager = creator;
     new_room->member_count = 0;
     new_room->next = NULL;
     new_room->prev = NULL;
