@@ -6,67 +6,66 @@
 #include <string.h>
 #include <pthread.h>
 #include <stdlib.h>
-#include <stdbool.h> // For bool type
+#include <stdbool.h>
 
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 2048
 
-// UI elements
-GtkWidget *ip_entry;
-GtkWidget *port_entry;
-GtkWidget *connect_button;
-GtkWidget *chat_view;
-GtkWidget *message_entry;
-GtkWidget *send_button;
-GtkWidget *window; // Main window
-GtkWidget *scrolled_window; // Declare scrolled_window globally
+// UI 요소
+GtkWidget *ip_entry;            // IP 주소 입력 필드
+GtkWidget *port_entry;          // 포트 번호 입력 필드
+GtkWidget *connect_button;      // 연결 버튼
+GtkWidget *chat_view;           // 채팅 뷰 (텍스트 뷰)
+GtkWidget *room_create_entry;   // 대화방 생성 입력 필드
+GtkWidget *room_create_button;  // 대화방 생성 버튼
+GtkWidget *message_entry;       // 메시지 입력 필드
+GtkWidget *send_button;         // 메시지 전송 버튼
+GtkWidget *window;              // 메인 창
+GtkWidget *scrolled_window;     // 스크롤 가능한 윈도우
 
-int sock = -1; // Socket descriptor for the server connection
-pthread_t recv_thread_id = 0; // Thread ID for the receiver thread
+int sock = -1;
+pthread_t recv_thread_id = 0; // 수신 스레드 ID
 
-// Structure to pass widget and state to idle callback
+// 위젯과 민감도 상태 저장 - UI 요소의 민감도를 안전하게 설정하기 위해 사용
 typedef struct {
     GtkWidget *widget;
     gboolean sensitive;
 } WidgetSensitivityData;
 
-// Idle callback to safely append message to chat view from another thread
-// Returns G_SOURCE_REMOVE to be called only once
-// user_data is a duplicated string (g_strdup)
+// 다른 스레드에서 UI 요소를 안전하게 업데이트하기 위한 idle 콜백
+// GTK는 UI 업데이트를 메인 스레드에서만 수행할 수 있으므로, g_idle_add를 사용하여 메인 스레드에서 실행되도록 함
 static gboolean append_message_to_view_idle(gpointer user_data) {
     char *message = (char *)user_data;
-    GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(chat_view));
-    GtkTextIter end_iter;
-    gtk_text_buffer_get_end_iter(buffer, &end_iter);
-    gtk_text_buffer_insert(buffer, &end_iter, message, -1);
-    gtk_text_buffer_insert(buffer, &end_iter, "\n", -1);
+    GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(chat_view)); // 텍스트 뷰의 버퍼 가져오기
+    GtkTextIter end_iter; // 텍스트 삽입 위치를 위한 반복자
+    gtk_text_buffer_get_end_iter(buffer, &end_iter); // 버퍼의 끝 위치 가져오기
+    gtk_text_buffer_insert(buffer, &end_iter, message, -1); // 메시지 삽입
+    gtk_text_buffer_insert(buffer, &end_iter, "\n", -1);    // 줄 바꿈 추가
 
-    // Auto-scroll to the end of the text view
+    // 스크롤 바를 항상 아래로 이동
     GtkAdjustment *vadj = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scrolled_window));
     if (vadj) {
         gtk_adjustment_set_value(vadj, gtk_adjustment_get_upper(vadj) - gtk_adjustment_get_page_size(vadj));
     }
-    g_free(message); // Free the string allocated by g_strdup
-    return G_SOURCE_REMOVE; // Remove source after execution
-}
-
-// Idle callback to safely set widget sensitivity from another thread
-// Returns G_SOURCE_REMOVE to be called only once
-// user_data is a pointer to WidgetSensitivityData (g_new)
-static gboolean set_widget_sensitive_idle(gpointer user_data) {
-    WidgetSensitivityData *data = (WidgetSensitivityData *)user_data;
-    gtk_widget_set_sensitive(data->widget, data->sensitive);
-    g_free(data); // Free the allocated data structure
+    g_free(message);
     return G_SOURCE_REMOVE;
 }
 
-// Thread function to receive messages from the server
+// 다른 스레드에서 위젯의 민감도를 안전하게 설정하기 위한 idle 콜백
+static gboolean set_widget_sensitive_idle(gpointer user_data) {
+    WidgetSensitivityData *data = (WidgetSensitivityData *)user_data;
+    gtk_widget_set_sensitive(data->widget, data->sensitive);
+    g_free(data);
+    return G_SOURCE_REMOVE;
+}
+
+// 서버로부터 메시지를 수신하는 스레드 함수
 static void *receive_messages(void *arg) {
     char buffer[BUFFER_SIZE];
     ssize_t bytes_received;
 
     while ((bytes_received = recv(sock, buffer, BUFFER_SIZE - 1, 0)) > 0) {
         buffer[bytes_received] = '\0';
-        g_idle_add(append_message_to_view_idle, g_strdup(buffer)); // Use g_idle_add for thread safety
+        g_idle_add(append_message_to_view_idle, g_strdup(buffer));
     }
 
     if (bytes_received == 0) {
@@ -75,7 +74,7 @@ static void *receive_messages(void *arg) {
         g_idle_add(append_message_to_view_idle, g_strdup("[Client] Error receiving message."));
     }
 
-    // Safely update UI elements (disable sending, enable connect)
+    // 연결 종료 시 UI 요소의 민감도 상태 변경
     WidgetSensitivityData *send_data = g_new(WidgetSensitivityData, 1);
     send_data->widget = send_button; send_data->sensitive = FALSE;
     g_idle_add(set_widget_sensitive_idle, send_data);
@@ -90,11 +89,11 @@ static void *receive_messages(void *arg) {
         close(sock);
         sock = -1;
     }
-    recv_thread_id = 0; // Mark thread as finished
+    recv_thread_id = 0;
     return NULL;
 }
 
-// Callback for the "Connect" button
+// Connect 버튼 클릭 시 호출되는 콜백 함수 - 서버에 연결 시도
 static void on_connect_clicked(GtkWidget *widget, gpointer data) {
     if (sock != -1) {
         g_idle_add(append_message_to_view_idle, g_strdup("[Client] Already connected or attempting to connect."));
@@ -128,7 +127,7 @@ static void on_connect_clicked(GtkWidget *widget, gpointer data) {
     if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
         perror("connect");
         g_idle_add(append_message_to_view_idle, g_strdup("[Client] Error: Connection failed."));
-        close(sock); sock = -1; return; // Close socket on connection failure
+        close(sock); sock = -1; return;
     }
 
     g_idle_add(append_message_to_view_idle, g_strdup("[Client] Connected to server!"));
@@ -147,7 +146,7 @@ static void on_connect_clicked(GtkWidget *widget, gpointer data) {
     }
 }
 
-// Callback for the "Send" button or pressing Enter in the message entry
+// Send 버튼 클릭 시 호출되는 콜백 함수 - 메시지 전송
 static void on_send_clicked(GtkWidget *widget, gpointer data) {
     if (sock < 0) {
         g_idle_add(append_message_to_view_idle, g_strdup("[Client] Not connected to server."));
@@ -167,26 +166,48 @@ static void on_send_clicked(GtkWidget *widget, gpointer data) {
     gtk_widget_grab_focus(message_entry);
 }
 
-// Window destroy callback (cleanup)
+// 창이 닫힐 때 호출되는 콜백 함수 - 소켓 종료 및 스레드 정리
 static void on_window_destroy(GtkWidget *widget, gpointer data) {
     if (sock != -1) {
         shutdown(sock, SHUT_RDWR); close(sock); sock = -1;
     }
-    if (recv_thread_id != 0) { // If thread was created and potentially running
-        pthread_join(recv_thread_id, NULL); // Wait for the receive thread to finish
+    if (recv_thread_id != 0) { 
+        pthread_join(recv_thread_id, NULL);
     }
-    gtk_main_quit(); // Quit GTK main loop
+    gtk_main_quit();
 }
 
-// Application activate callback (builds UI)
+static void on_create_room_clicked(GtkWidget *widget, gpointer data) {
+    if (sock < 0) {
+        g_idle_add(append_message_to_view_idle, g_strdup("[Client] Not connected to server."));
+        return;
+    }
+    const char *room_name = gtk_entry_get_text(GTK_ENTRY(room_create_entry));
+    if (strlen(room_name) == 0) {
+        g_idle_add(append_message_to_view_idle, g_strdup("[Client] Please enter a room name."));
+        return;
+    }
+
+    char buffer_create[BUFFER_SIZE];
+    snprintf(buffer_create, sizeof(buffer_create), "/create %s\n", room_name);
+
+    if (send(sock, buffer_create, strlen(buffer_create), 0) < 0) {
+        perror("send");
+        g_idle_add(append_message_to_view_idle, g_strdup("[Client] Error: Failed to create room."));
+    }
+    gtk_entry_set_text(GTK_ENTRY(room_create_entry), "");
+    gtk_widget_grab_focus(message_entry);
+}
+
+// 메인 창 활성화 시 호출되는 함수 - UI 초기화 및 설정
 static void activate(GtkApplication *app, gpointer user_data) {
-    GtkWidget *grid, *ip_label, *port_label; // Ensure scrolled_window is NOT declared locally here
+    GtkWidget *grid, *ip_label, *port_label;
 
     window = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window), "Chat Client");
     gtk_window_set_default_size(GTK_WINDOW(window), 500, 400);
     gtk_container_set_border_width(GTK_CONTAINER(window), 10);
-    g_signal_connect(window, "destroy", G_CALLBACK(on_window_destroy), NULL); // Connect cleanup on window close
+    g_signal_connect(window, "destroy", G_CALLBACK(on_window_destroy), NULL); // 창 닫기 시 콜백
 
     grid = gtk_grid_new();
     gtk_grid_set_column_spacing(GTK_GRID(grid), 5);
@@ -194,41 +215,48 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_container_add(GTK_CONTAINER(window), grid);
 
     ip_label = gtk_label_new("Server IP:");
-    gtk_grid_attach(GTK_GRID(grid), ip_label, 0, 0, 1, 1); // Row 0, Col 0
+    gtk_grid_attach(GTK_GRID(grid), ip_label, 0, 0, 1, 1); // 행 0, 열 0
     ip_entry = gtk_entry_new();
     gtk_entry_set_text(GTK_ENTRY(ip_entry), "127.0.0.1");
-    gtk_grid_attach(GTK_GRID(grid), ip_entry, 1, 0, 1, 1); // Row 0, Col 1
+    gtk_grid_attach(GTK_GRID(grid), ip_entry, 1, 0, 1, 1); // 행 0, 열 1
 
     port_label = gtk_label_new("Port:");
-    gtk_grid_attach(GTK_GRID(grid), port_label, 2, 0, 1, 1); // Row 0, Col 2
+    gtk_grid_attach(GTK_GRID(grid), port_label, 2, 0, 1, 1); // 행 0, 열 2
     port_entry = gtk_entry_new();
     gtk_entry_set_text(GTK_ENTRY(port_entry), "9000");
-    gtk_grid_attach(GTK_GRID(grid), port_entry, 3, 0, 1, 1); // Row 0, Col 3
+    gtk_grid_attach(GTK_GRID(grid), port_entry, 3, 0, 1, 1); // 행 0, 열 3
 
     connect_button = gtk_button_new_with_label("Connect");
     g_signal_connect(connect_button, "clicked", G_CALLBACK(on_connect_clicked), NULL);
-    gtk_grid_attach(GTK_GRID(grid), connect_button, 4, 0, 1, 1); // Row 0, Col 4
+    gtk_grid_attach(GTK_GRID(grid), connect_button, 4, 0, 1, 1); // 행 0, 열 4
 
     scrolled_window = gtk_scrolled_window_new(NULL, NULL);
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled_window), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC); // Add scrollbars
-    gtk_widget_set_vexpand(scrolled_window, TRUE);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled_window), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC); // 스크롤바 자동 표시    gtk_widget_set_vexpand(scrolled_window, TRUE);
     chat_view = gtk_text_view_new();
     gtk_text_view_set_editable(GTK_TEXT_VIEW(chat_view), FALSE);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(chat_view), FALSE);
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(chat_view), GTK_WRAP_WORD_CHAR);
     gtk_container_add(GTK_CONTAINER(scrolled_window), chat_view);
-    gtk_grid_attach(GTK_GRID(grid), scrolled_window, 0, 1, 5, 1); // Row 1, Col 0, spans 5 columns
+    gtk_grid_attach(GTK_GRID(grid), scrolled_window, 0, 1, 5, 1); // 행 1, 열 0, 5열 차지
 
     message_entry = gtk_entry_new();
     gtk_widget_set_hexpand(message_entry, TRUE);
     g_signal_connect(message_entry, "activate", G_CALLBACK(on_send_clicked), NULL);
-    gtk_grid_attach(GTK_GRID(grid), message_entry, 0, 2, 4, 1); // Row 2, Col 0, spans 4 columns
+    gtk_grid_attach(GTK_GRID(grid), message_entry, 0, 2, 4, 1); // 행 2, 열 0, 4열 차지
     gtk_widget_set_sensitive(message_entry, FALSE);
 
     send_button = gtk_button_new_with_label("Send");
     g_signal_connect(send_button, "clicked", G_CALLBACK(on_send_clicked), NULL);
-    gtk_grid_attach(GTK_GRID(grid), send_button, 4, 2, 1, 1); // Row 2, Col 4
+    gtk_grid_attach(GTK_GRID(grid), send_button, 4, 2, 1, 1); // 행 2, 열 4
     gtk_widget_set_sensitive(send_button, FALSE);
+
+    room_create_entry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(room_create_entry), "Enter Room Name");
+    gtk_grid_attach(GTK_GRID(grid), room_create_entry, 0, 3, 4, 1); // 행 3, 열 0, 4열 차지
+    
+    room_create_button = gtk_button_new_with_label("Create Room");
+    gtk_grid_attach(GTK_GRID(grid), room_create_button, 4, 3, 1, 1); // 행 3, 열 4
+    g_signal_connect(room_create_button, "clicked", G_CALLBACK(on_create_room_clicked), room_create_entry);
 
     gtk_widget_show_all(window);
 }
@@ -237,7 +265,7 @@ int main(int argc, char *argv[]) {
     GtkApplication *app;
     int status;
 
-    app = gtk_application_new("org.example.chatclient", G_APPLICATION_NON_UNIQUE); // Use recommended flag
+    app = gtk_application_new("org.example.chatclient", G_APPLICATION_NON_UNIQUE);
     g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
     status = g_application_run(G_APPLICATION(app), argc, argv);
     g_object_unref(app);
