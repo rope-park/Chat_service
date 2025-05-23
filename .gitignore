@@ -53,3 +53,4 @@ coverage/
 package-lock.json
 yarn.lock
 chatting_server_me
+chat_client_gtk
