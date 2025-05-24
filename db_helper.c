@@ -205,3 +205,22 @@ void db_insert_message(Room *room, User *user, const char *message) {
     }
     sqlite3_finalize(stmt);
 }
+
+// 최근 접속 사용자 목록 함수 - 최근 접속한 사용자 정보를 가져옴
+void db_recent_user(int limit) {
+    const char *sql =
+        "SELECT user_id, connected, timestamp FROM user "
+        "WHERE connected = 1 ORDER BY timestamp DESC LIMIT ?;";
+
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    sqlite3_bind_int(stmt, 1, limit);
+    
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char *user_id = (const char *)sqlite3_column_text(stmt, 0);
+        int connected = sqlite3_column_int(stmt, 1);
+        const char *timestamp = (const char *)sqlite3_column_text(stmt, 2);
+        printf("User: %s, Connected: %d, Timestamp: %s\n", user_id, connected, timestamp);
+    }
+    sqlite3_finalize(stmt);
+}
