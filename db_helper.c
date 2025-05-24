@@ -1,0 +1,79 @@
+#include <stdio.h>
+#include <sqlite3.h>
+#include "db_helper.h"
+
+sqlite3 *db = NULL;
+
+// 데이터베이스 초기화 함수 - 데이터베이스 파일 열기, 테이블 생성
+void db_init() {
+    int rc = sqlite3_open("chat.db", &db);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
+        sqlite3_close(db);
+        exit(1);
+    } else {
+        fprintf(stderr, "Opened database successfully\n");
+    }
+
+    // 데이터베이스 테이블 생성
+    const char *sql_user_tbl =
+        "CREATE TABLE IF NOT EXISTS user ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "sock_no INTEGER UNIQUE, "
+        "user_id TEXT NOT NULL, "
+        "connected INTEGER, "
+        "timestamp DATETIME DEFAULT CURRENT_TIMESTAMP);";
+    
+    const char *sql_room_tbl =
+        "CREATE TABLE IF NOT EXISTS room ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "room_no INTEGER UNIQUE, "
+        "room_name TEXT NOT NULL, "
+        "manager_id TEXT, "
+        "member_count INTEGER DEFAULT 0, "
+        "created_time DATETIME DEFAULT CURRENT_TIMESTAMP, "
+        "FOREIGN KEY(manager_id) REFEREBCES user(id));";
+
+    const char *sql_message_tbl =
+        "CREATE TABLE IF NOT EXISTS message ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "room_no INTEGER, "
+        "sender_id TEXT, "
+        "context TEXT, "
+        "timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, "
+        "FOREIGN KEY(room_no) REFERENCES room(room_no), "
+        "FOREIGN KEY(user_id) REFERENCES user(user_id));";
+
+    char *err_msg;
+    rc = sqlite3_exec(db, sql_user_tbl, 0, 0, &err_msg);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL user_tbl error: %s\n", err_msg);
+        sqlite3_free(err_msg);
+    } else {
+        fprintf(stderr, "User table created successfully\n");
+    }
+
+    rc = sqlite3_exec(db, sql_room_tbl, 0, 0, &err_msg);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL room_tbl error: %s\n", err_msg);
+        sqlite3_free(err_msg);
+    } else {
+        fprintf(stderr, "Room table created successfully\n");
+    }
+
+    rc = sqlite3_exec(db, sql_message_tbl, 0, 0, &err_msg);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL message_tbl error: %s\n", err_msg);
+        sqlite3_free(err_msg);
+    } else {
+        fprintf(stderr, "Message table created successfully\n");
+    }
+}
+
+// 데이터베이스 종료 함수 - 데이터베이스 연결 닫기
+void db_close() {
+    if (db) {
+        sqlite3_close(db);
+        fprintf(stderr, "Database closed successfully\n");
+    }
+}
