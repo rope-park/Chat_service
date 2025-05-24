@@ -128,10 +128,33 @@ void db_disconnect_user(User *user) {
         fprintf(stderr, "User '%s' disconnected successfully\n", user->id);
     }
     sqlite3_finalize(stmt);
-}         
+}
 
-void db_create_room(Room *room);                                
+// 대화방 생성 함수 - 대화방 정보를 데이터베이스에 삽입
+void db_create_room(Room *room) {
+    const char *sql =
+        "INSERT INTO room (room_no, room_name, manager_id, member_count) "
+        "VALUES (?, ?, ?, 0);";
+
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    sqlite3_bind_int(stmt, 1, room->no);
+    sqlite3_bind_text(stmt, 2, room->room_name, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 3, room->manager->id, -1, SQLITE_STATIC);
+    int rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        fprintf(stderr, "SQL create room error: %s\n", sqlite3_errmsg(db));
+    } else {
+        fprintf(stderr, "Room '%s' created successfully\n", room->room_name);
+    }
+    sqlite3_finalize(stmt);
+}
+
+
 void db_update_room_name(Room *room, const char *new_name);    
+
+
 void db_update_room_manager(Room *room, const char *new_manager_id);    
+
 
 void db_insert_message(Room *room, User *user, const char *message);
