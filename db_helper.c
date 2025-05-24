@@ -97,7 +97,20 @@ void db_insert_user(User *user) {
 }
 // 사용자 ID 변경 함수 - 사용자 ID 업데이트
 void db_update_user_id(User *user, const char *new_id) {
-
+    const char *sql = 
+        "UPDATE user SET user_id = ? WHERE sock_no = ?;";
+    
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    sqlite3_bind_text(stmt, 1, new_id, -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 2, user->sock);
+    int rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        fprintf(stderr, "SQL update user ID error: %s\n", sqlite3_errmsg(db));
+    } else {
+        fprintf(stderr, "User ID updated to '%s' successfully\n", new_id);
+    }
+    sqlite3_finalize(stmt);
 }
 
 // 사용자 연결 해제 함수 - 사용자의 연결 상태 업데이트
