@@ -2,7 +2,7 @@
 #define DB_HELPER_H
 
 #include <sqlite3.h>
-#include "chat_server.h"
+#include "chatting_server_me.c"
 
 extern sqlite3 *db;
 
@@ -22,9 +22,5 @@ void db_update_room_manager(Room *room, const char *new_manager_id);     // 대�
 
 // 메시지 관련 함수
 void db_insert_message(Room *room, User *user, const char *message); // 메시지 추가
-
-// 데이터베이스에서 사용자 검색
-void db_recent_user(int limit); // 최근 접속 사용자 목록
-void db_get_room_message(Room *room, User *user); // 대화방 메시지 가져오기
 
 #endif // DB_HELPER_H
