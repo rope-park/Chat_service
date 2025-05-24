@@ -15,6 +15,7 @@ GtkWidget *ip_entry;            // IP 주소 입력 필드
 GtkWidget *port_entry;          // 포트 번호 입력 필드
 GtkWidget *connect_button;      // 연결 버튼
 GtkWidget *chat_view;           // 채팅 뷰 (텍스트 뷰)
+GtkWidget *tool_palette;        // 도구 팔레트 (툴바)
 GtkWidget *room_create_entry;   // 대화방 생성 입력 필드
 GtkWidget *room_create_button;  // 대화방 생성 버튼
 GtkWidget *message_entry;       // 메시지 입력 필드
@@ -177,6 +178,7 @@ static void on_window_destroy(GtkWidget *widget, gpointer data) {
     gtk_main_quit();
 }
 
+// 대화방 생성 버튼 클릭 시 호출되는 콜백 함수 - 대화방 생성 요청
 static void on_create_room_clicked(GtkWidget *widget, gpointer data) {
     if (sock < 0) {
         g_idle_add(append_message_to_view_idle, g_strdup("[Client] Not connected to server."));
@@ -197,6 +199,9 @@ static void on_create_room_clicked(GtkWidget *widget, gpointer data) {
     }
     gtk_entry_set_text(GTK_ENTRY(room_create_entry), "");
     gtk_widget_grab_focus(message_entry);
+
+    gtk_widget_hide(room_create_entry);
+    gtk_widget_hide(room_create_button);
 }
 
 // 메인 창 활성화 시 호출되는 함수 - UI 초기화 및 설정
@@ -205,7 +210,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
 
     window = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window), "Chat Client");
-    gtk_window_set_default_size(GTK_WINDOW(window), 500, 400);
+    gtk_window_set_default_size(GTK_WINDOW(window), 500, 800); 
     gtk_container_set_border_width(GTK_CONTAINER(window), 10);
     g_signal_connect(window, "destroy", G_CALLBACK(on_window_destroy), NULL); // 창 닫기 시 콜백
 
@@ -259,13 +264,15 @@ static void activate(GtkApplication *app, gpointer user_data) {
     g_signal_connect(room_create_button, "clicked", G_CALLBACK(on_create_room_clicked), room_create_entry);
 
     gtk_widget_show_all(window);
+    gtk_widget_hide(room_create_entry);
+    gtk_widget_hide(room_create_button);
 }
 
 int main(int argc, char *argv[]) {
     GtkApplication *app;
     int status;
 
-    app = gtk_application_new("org.example.chatclient", G_APPLICATION_NON_UNIQUE);
+    app = gtk_application_new("org.chat.gtk", G_APPLICATION_NON_UNIQUE);
     g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
     status = g_application_run(G_APPLICATION(app), argc, argv);
     g_object_unref(app);
