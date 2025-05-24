@@ -186,5 +186,22 @@ void db_update_room_manager(Room *room, const char *new_manager_id) {
     sqlite3_finalize(stmt);
 }
 
+// 메시지 추가 함수 - 대화방 메시지를 데이터베이스에 삽입
+void db_insert_message(Room *room, User *user, const char *message) {
+    const char *sql =
+        "INSERT INTO message (room_no, sender_id, context) "
+        "VALUES (?, ?, ?);";
 
-void db_insert_message(Room *room, User *user, const char *message);
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    sqlite3_bind_int(stmt, 1, room->no);
+    sqlite3_bind_text(stmt, 2, user->id, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 3, message, -1, SQLITE_STATIC);
+    int rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        fprintf(stderr, "SQL insert message error: %s\n", sqlite3_errmsg(db));
+    } else {
+        fprintf(stderr, "Message from '%s' in room '%s' inserted successfully\n", user->id, room->room_name);
+    }
+    sqlite3_finalize(stmt);
+}
