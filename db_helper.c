@@ -150,8 +150,23 @@ void db_create_room(Room *room) {
     sqlite3_finalize(stmt);
 }
 
-
-void db_update_room_name(Room *room, const char *new_name);    
+// 대화방 이름 변경 함수 - 대화방 이름 업데이트
+void db_update_room_name(Room *room, const char *new_name) {
+    const char *sql =
+        "UPDATE room SET room_name = ? WHERE room_no = ?;";
+    
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    sqlite3_bind_text(stmt, 1, new_name, -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 2, room->no);
+    int rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        fprintf(stderr, "SQL update room name error: %s\n", sqlite3_errmsg(db));
+    } else {
+        fprintf(stderr, "Room name updated to '%s' successfully\n", new_name);
+    }
+    sqlite3_finalize(stmt);
+}
 
 
 void db_update_room_manager(Room *room, const char *new_manager_id);    
