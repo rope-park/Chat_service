@@ -77,3 +77,36 @@ void db_close() {
         fprintf(stderr, "Database closed successfully\n");
     }
 }
+
+// 사용자 추가 함수 - 사용자 정보를 데이터베이스에 삽입
+void db_insert_user(User *user) {
+    const char *sql = 
+        "INSERT INTO user (sock_no, user_id, connected) VALUES (?, ?, 1);";
+
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    sqlite3_bind_int(stmt, 1, user->sock);
+    sqlite3_bind_text(stmt, 2, user->id, -1, SQLITE_STATIC);
+    int rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        fprintf(stderr, "SQL insert user error: %s\n", sqlite3_errmsg(db));
+    } else {
+        fprintf(stderr, "User '%s' inserted successfully\n", user->id);
+    }
+    sqlite3_finalize(stmt);
+}
+// 사용자 ID 변경 함수 - 사용자 ID 업데이트
+void db_update_user_id(User *user, const char *new_id) {
+
+}
+
+// 사용자 연결 해제 함수 - 사용자의 연결 상태 업데이트
+void db_disconnect_user(User *user) {
+    
+}         
+
+void db_create_room(Room *room);                                
+void db_update_room_name(Room *room, const char *new_name);    
+void db_update_room_manager(Room *room, const char *new_manager_id);    
+
+void db_insert_message(Room *room, User *user, const char *message);
