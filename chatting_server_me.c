@@ -13,6 +13,7 @@
 #include <sys/time.h>
 #include <time.h>
 #include <ctype.h>
+#include "db_helper.h" // 데이터베이스 관련 함수들
 
 #define PORTNUM         9000
 #define MAX_CLIENT      100
@@ -22,7 +23,7 @@
 // User 구조체
 typedef struct User {
     int sock;                           // 소켓 번호
-    char id[64];                        // 사용자 ID (닉네임)
+    char id[20];                        // 사용자 ID (닉네임)
     pthread_t thread;                   // 사용자별 스레드
     struct Room *room;                  // 대화방 포인터
     struct User *next;                  // 다음 사용자 포인터
@@ -33,7 +34,7 @@ typedef struct User {
 
 // Room 구조체
 typedef struct Room {
-    char room_name[64];                 // 방 이름
+    char room_name[32];                 // 방 이름
     unsigned int no;                    // 방 고유 번호
     User *manager;                      // 방장
     User *members[MAX_CLIENT];          // 방에 참여중인 멤버 목록
@@ -686,9 +687,9 @@ void *client_process(void *args) {
             break;
         }
 
-        // ID 길이 검사 (2 ~ 63자)
-        if (len < 2 || len > 63) {
-            safe_send(user->sock, "ID should be 2 ~ 63 characters. Try again.\n");
+        // ID 길이 검사 (2 ~ 20자)
+        if (len < 2 || len > 20) {
+            safe_send(user->sock, "ID should be 2 ~ 20 characters. Try again.\n");
             continue;
         }
 
@@ -705,8 +706,10 @@ void *client_process(void *args) {
         // 고유 ID 발견 및 사용자 ID로 할당
         strncpy(user->id, buf, sizeof(user->id) - 1);
         user->id[sizeof(user->id) - 1] = '\0';
+        db_insert_user(user); // 데이터베이스에 사용자 정보 저장
         break;
     }
+
 
     {   // 사용자 ID 설정 후 환영 메시지 전송
         char welcome_msg[BUFFER_SIZE];
@@ -790,6 +793,7 @@ void *client_process(void *args) {
         } else {
             // 일반 채팅: 방에 있으면 해당 방, 아니면 로비 브로드캐스트
             if (user->room) {
+                db_insert_message(user->room, user, buf); // 데이터베이스에 메시지 저장
                 broadcast_to_room(user->room, user, "[%s] %s\n", user->id, buf);
             } else {
                 broadcast_to_all(user, "[%s] %s\n", user->id, buf);
@@ -809,12 +813,13 @@ void *client_process(void *args) {
         close(user->sock);
     }
     free(user);
+    db_disconnect_user(user); // 데이터베이스 연결 해제
     pthread_exit(NULL);
 }
 
 // 서버 명령어 처리 함수
 void process_server_cmd(int epfd, int server_sock) {
-    char cmd_buf[64];
+    char cmd_buf[BUFFER_SIZE];
 
     // 서버 명령어 입력
     if (!fgets(cmd_buf, sizeof(cmd_buf) - 1, stdin)) {
@@ -825,6 +830,12 @@ void process_server_cmd(int epfd, int server_sock) {
 
     // 개행 문자 제거
     cmd_buf[strcspn(cmd_buf, "\r\n")] = '\0';
+
+    if (strncmp(cmd_buf, "recent_users", 12) == 0) {
+        // 데이터베이스로부터 최근 사용자 목록 출력
+        int limit = atoi(cmd_buf + 11);
+        db_recent_user(limit);
+    }
 
     // 명령어와 인자 분리
     char *cmd = strtok(cmd_buf, " ");
@@ -891,6 +902,7 @@ void cmd_users(User *user) {
         }
         pthread_mutex_unlock(&g_users_mutex);
     }
+    db_recent_user(user_list); // 최근 사용자 목록 업데이트
     
     strcat(user_list, "\n");
     safe_send(user->sock, user_list);
@@ -960,9 +972,9 @@ void cmd_id(User *user, char *args) {
 
     char *new_id = strtok(args, " ");
     // ID 길이 제한
-    if (new_id == NULL || strlen(new_id) < 2 || strlen(new_id) > 61) {
+    if (new_id == NULL || strlen(new_id) < 2 || strlen(new_id) > 20) {
         char error_msg[BUFFER_SIZE];
-        snprintf(error_msg, sizeof(error_msg), "[Server] ID must be 2 ~ 61 characters long.\n");
+        snprintf(error_msg, sizeof(error_msg), "[Server] ID must be 2 ~ 20 characters long.\n");
         safe_send(user->sock, error_msg);
         return;
     }
@@ -983,6 +995,7 @@ void cmd_id(User *user, char *args) {
     printf("[INFO] User %s changed ID to %s\n", user->id, new_id);
     strncpy(user->id, new_id, sizeof(user->id) -1);
     user->id[sizeof(user->id) - 1] = '\0';
+    db_update_user_id(user, new_id); // 데이터베이스에 ID 업데이트
 
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] ID updated to %s.\n", user->id);
@@ -1042,6 +1055,8 @@ void cmd_manager(User *user, char *user_id) {
     pthread_mutex_lock(&g_rooms_mutex);
     r->manager = target_user;
     pthread_mutex_unlock(&g_rooms_mutex);
+    db_update_room_manager(r, target_user->id); // 데이터베이스에 방장 정보 업데이트
+
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] User '%s' is now the manager of room '%s'.\n", target_user->id, r->room_name);
     broadcast_to_room(r, NULL, "%s", success_msg);
@@ -1082,6 +1097,7 @@ void cmd_change(User *user, char *room_name) {
     strncpy(r->room_name, room_name, sizeof(r->room_name) - 1);
     r->room_name[sizeof(r->room_name) - 1] = '\0';
     pthread_mutex_unlock(&g_rooms_mutex);
+    db_update_room_name(r, r->room_name); // 데이터베이스에 방 이름 업데이트
 
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] Room name changed to '%s'.\n", r->room_name);
@@ -1208,8 +1224,9 @@ void cmd_create(User *creator, char *room_name) {
 
     // 대화방에 사용자 추가
     room_add_member(new_room, creator);
-
     printf("[INFO] User %s created room '%s' (ID: %u) and joined.\n", creator->id, new_room->room_name, new_room->no);
+    db_create_room(new_room); // 데이터베이스에 대화방 정보 저장
+
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] Room '%s' (ID: %u) created and joined.\n", new_room->room_name, new_room->no);
     safe_send(creator->sock, success_msg);
@@ -1365,6 +1382,8 @@ void usage_help(User *user) {
 
 // ================================== 메인 함수 ================================
 int main() {
+    db_init(); // 데이터베이스 초기화
+
     int ns;
     struct sockaddr_in sin, cli;
     socklen_t clientlen = sizeof(cli);
@@ -1460,6 +1479,7 @@ int main() {
         }
     }
     close(g_server_sock);
+    db_close(); // 데이터베이스 종료
     return 0;
 }
 
