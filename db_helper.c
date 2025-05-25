@@ -14,6 +14,8 @@ void db_init() {
     } else {
         fprintf(stderr, "Opened database successfully\n");
     }
+    sqlite3_exec(db, "PRAGMA foreign_keys = ON;", NULL, NULL, NULL); // 외래 키 제약 조건 활성화
+    sqlite3_busy_timeout(db, 5000); // 데이터베이스 잠금 대기 시간 설정 (5초)
 
     // 데이터베이스 테이블 생성
     const char *sql_user_tbl =
@@ -42,7 +44,7 @@ void db_init() {
         "context TEXT, "
         "timestamp DATETIME DEFAULT (DATETIME('NOW', 'LOCALTIME')), "
         "FOREIGN KEY(room_no) REFERENCES room(room_no), "
-        "FOREIGN KEY(sender_id) REFERENCES user(sender_id));";
+        "FOREIGN KEY(sender_id) REFERENCES user(user_id));";
 
     char *err_msg;
     rc = sqlite3_exec(db, sql_user_tbl, 0, 0, &err_msg);
