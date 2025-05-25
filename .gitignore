@@ -52,5 +52,5 @@ coverage/
 # 임시 패키지 매니저 잠금 파일(원치 않을 경우 제외)
 package-lock.json
 yarn.lock
-chatting_server_me
+chat_server
 chat_client_gtk
