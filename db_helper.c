@@ -224,3 +224,21 @@ void db_recent_user(int limit) {
     }
     sqlite3_finalize(stmt);
 }
+
+// 대화방 메시지 가져오기 함수 - 사용자 재접속 시 이전에 leave하지 않은 대화방의 메시지를 가져옴
+// 사용자의 최초 대화방 참여 이후부터 현재까지의 메시지를 가져옴
+void db_get_room_message(Room *room, User *user) {
+    const char *sql = 
+        "SELECT sender_id, context, timestamp FROM message "
+        "WHERE room_no = ? ORDER BY timestamp ASC;";
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    sqlite3_bind_int(stmt, 1, room->no); 
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char *sender_id = (const char *)sqlite3_column_text(stmt, 0);
+        const char *context = (const char *)sqlite3_column_text(stmt, 1);
+        const char *timestamp = (const char *)sqlite3_column_text(stmt, 2);
+        printf("[%s] %s: %s\n", timestamp, sender_id, context); // 메시지 출력
+    }
+    sqlite3_finalize(stmt);
+}
