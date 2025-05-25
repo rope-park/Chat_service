@@ -13,6 +13,7 @@
 #include <sys/time.h>
 #include <time.h>
 #include <ctype.h>
+#include "db_helper.h" // 데이터베이스 관련 함수들
 
 #define PORTNUM         9000
 #define MAX_CLIENT      100
@@ -22,7 +23,7 @@
 // User 구조체
 typedef struct User {
     int sock;                           // 소켓 번호
-    char id[64];                        // 사용자 ID (닉네임)
+    char id[20];                        // 사용자 ID (닉네임)
     pthread_t thread;                   // 사용자별 스레드
     struct Room *room;                  // 대화방 포인터
     struct User *next;                  // 다음 사용자 포인터
@@ -33,7 +34,7 @@ typedef struct User {
 
 // Room 구조체
 typedef struct Room {
-    char room_name[64];                 // 방 이름
+    char room_name[32];                 // 방 이름
     unsigned int no;                    // 방 고유 번호
     User *manager;                      // 방장
     User *members[MAX_CLIENT];          // 방에 참여중인 멤버 목록
@@ -803,6 +804,7 @@ void *client_process(void *args) {
     }
     db_disconnect_user(user); // 데이터베이스 연결 해제
     free(user);
+    db_disconnect_user(user); // 데이터베이스 연결 해제
     pthread_exit(NULL);
 }
 
@@ -820,9 +822,16 @@ void process_server_cmd(int epfd, int server_sock) {
     // 개행 문자 제거
     cmd_buf[strcspn(cmd_buf, "\r\n")] = '\0';
 
-    char *cmd = strtok(cmd_buf, " "); // 첫 번째 토큰을 명령어로 사용
-    char *arg = strtok(NULL, ""); // 나머지 토큰을 인자로 사용
+    if (strncmp(cmd_buf, "recent_users", 12) == 0) {
+        // 데이터베이스로부터 최근 사용자 목록 출력
+        int limit = atoi(cmd_buf + 11);
+        db_recent_user(limit);
+    }
 
+    // 명령어와 인자 분리
+    char *cmd = strtok(cmd_buf, " ");
+
+    // 인자 처리 - 명령어가 없거나 빈 문자열인 경우
     if (!cmd || strlen(cmd) == 0) {
         printf("No command entered. Available: users, rooms, recent_users, quit\n");
         fflush(stdout); // 버퍼 비우기
@@ -897,7 +906,7 @@ void cmd_users(User *user) {
         }
         pthread_mutex_unlock(&g_users_mutex);
     }
-    db_recent_user(10); // 최근 사용자 목록 업데이트
+    db_recent_user(user_list); // 최근 사용자 목록 업데이트
     
     strcat(user_list, "\n");
     safe_send(user->sock, user_list);
@@ -1041,6 +1050,9 @@ void cmd_manager(User *user, char *user_id) {
 
     // 방장 변경
     r->manager = target_user;
+    pthread_mutex_unlock(&g_rooms_mutex);
+    db_update_room_manager(r, target_user->id); // 데이터베이스에 방장 정보 업데이트
+
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] User '%s' is now the manager of room '%s'.\n", target_user->id, r->room_name);
     broadcast_to_room(r, NULL, "%s", success_msg);
@@ -1078,6 +1090,8 @@ void cmd_change(User *user, char *room_name) {
     // 대화방 이름 변경
     strncpy(r->room_name, room_name, sizeof(r->room_name) - 1);
     r->room_name[sizeof(r->room_name) - 1] = '\0';
+    pthread_mutex_unlock(&g_rooms_mutex);
+    db_update_room_name(r, r->room_name); // 데이터베이스에 방 이름 업데이트
 
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] Room name changed to '%s'.\n", r->room_name);
