@@ -22,7 +22,7 @@ void db_init() {
         "sock_no INTEGER UNIQUE, "
         "user_id TEXT NOT NULL, "
         "connected INTEGER, "
-        "timestamp DATETIME DEFAULT CURRENT_TIMESTAMP);";
+        "timestamp DATETIME DEFAULT (DATETIME('NOW', 'LOCALTIME')));";
     
     const char *sql_room_tbl =
         "CREATE TABLE IF NOT EXISTS room ("
@@ -31,8 +31,8 @@ void db_init() {
         "room_name TEXT NOT NULL, "
         "manager_id TEXT, "
         "member_count INTEGER DEFAULT 0, "
-        "created_time DATETIME DEFAULT CURRENT_TIMESTAMP, "
-        "FOREIGN KEY(manager_id) REFEREBCES user(id));";
+        "created_time DATETIME DEFAULT (DATETIME('NOW', 'LOCALTIME')), "
+        "FOREIGN KEY(manager_id) REFERENCES user(id));";
 
     const char *sql_message_tbl =
         "CREATE TABLE IF NOT EXISTS message ("
@@ -40,9 +40,9 @@ void db_init() {
         "room_no INTEGER, "
         "sender_id TEXT, "
         "context TEXT, "
-        "timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, "
+        "timestamp DATETIME DEFAULT (DATETIME('NOW', 'LOCALTIME')), "
         "FOREIGN KEY(room_no) REFERENCES room(room_no), "
-        "FOREIGN KEY(user_id) REFERENCES user(user_id));";
+        "FOREIGN KEY(sender_id) REFERENCES user(sender_id));";
 
     char *err_msg;
     rc = sqlite3_exec(db, sql_user_tbl, 0, 0, &err_msg);
