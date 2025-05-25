@@ -1,26 +1,45 @@
-# Makefile for chat_client_gtk
+# Makefile
 
 # Compiler
 CC = gcc
+CFLAGS: = -Wall -Wextra -g
+LIBS := -lsqlite3 -lpthread
 
 # GTK flags using pkg-config
 GTK_CFLAGS = $(shell pkg-config --cflags gtk+-3.0)
 GTK_LIBS = $(shell pkg-config --libs gtk+-3.0)
 
-# Target executable name
-TARGET = chat_client_gtk
+# ==== CLIENT SIDE ====
+CLIENT := chat_client_gtk
+CLIENT_SRC := chat_client_gtk.c
+CLIENT_OBJ := $(CLIENT_SRC:.c=.o)
 
-# Source file
-SRC = chat_client_gtk.c db_helper.c
+# ==== SERVER SIDE ====
+SERVER := chat_server
+SERVER_SRC := chat_server.c db_helper.c
+SERVER_OBJ := $(SERVER_SRC:.c=.o)
 
-# Default target: build the executable
-all: $(TARGET)
+.PHONY: all client server clean
 
-# Rule to build the executable
-$(TARGET): $(SRC)
-	$(CC) $(SRC) -o $(TARGET) $(GTK_CFLAGS) $(GTK_LIBS) -lsqlite3 -pthread
+# Default target
+client: $(CLIENT)
 
-# Clean target: remove built files
+# Build targets
+$(CLIENT): $(CLIENT_OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ $(GTK_CFLAGS) $(GTK_LIBS)
+
+# Build server
+server: $(SERVER)
+
+# Build targets
+$(SERVER): $(SERVER_OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
+
+%.o: %.c chat_server.h db_helper.h
+	$(CC) $(CFLAGS) -c $<
+
+# clean target: remove compiled files
 clean:
+	rm -f $(CLIENT) $(SERVER) *.o
 	rm -f $(TARGET)
 
