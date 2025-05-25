@@ -136,7 +136,7 @@ void db_disconnect_user(User *user) {
 void db_create_room(Room *room) {
     const char *sql =
         "INSERT INTO room (room_no, room_name, manager_id, member_count) "
-        "VALUES (?, ?, ?, 0);";
+        "VALUES (?, ?, ?, 1);";
 
     sqlite3_stmt *stmt;
     sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
@@ -184,6 +184,24 @@ void db_update_room_manager(Room *room, const char *new_manager_id) {
         fprintf(stderr, "SQL update room manager error: %s\n", sqlite3_errmsg(db));
     } else {
         fprintf(stderr, "Room manager updated to '%s' successfully\n", new_manager_id);
+    }
+    sqlite3_finalize(stmt);
+}
+
+// 대화방 멤버 수 업데이트 함수 - 대화방 참여자 수 업데이트
+void db_update_room_member_count(Room *room) {
+    const char *sql =
+        "UPDATE room SET member_count = ? WHERE room_no = ?;";
+
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    sqlite3_bind_int(stmt, 1, room->member_count);
+    sqlite3_bind_int(stmt, 2, room->no);
+    int rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        fprintf(stderr, "SQL update room member count error: %s\n", sqlite3_errmsg(db));
+    } else {
+        fprintf(stderr, "Room member count updated successfully\n");
     }
     sqlite3_finalize(stmt);
 }
