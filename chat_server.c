@@ -26,6 +26,7 @@ unsigned int g_next_room_no = 1; // 다음 대화방 고유 번호
 // Mutex 사용하여 스레드 상호 배제를 통해 안전하게 처리
 pthread_mutex_t g_users_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t g_rooms_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t g_db_mutex    = PTHREAD_MUTEX_INITIALIZER;
 
 // command 테이블 (서버)
 server_cmd_t cmd_tbl_server[] = {
@@ -675,7 +676,10 @@ void *client_process(void *args) {
         } else {
             // 일반 채팅: 방에 있으면 해당 방, 아니면 로비 브로드캐스트
             if (user->room) {
+                pthread_mutex_lock(&g_db_mutex);
                 db_insert_message(user->room, user, buf); // 데이터베이스에 메시지 저장
+                pthread_mutex_unlock(&g_db_mutex);
+
                 broadcast_to_room(user->room, user, "[%s] %s\n", user->id, buf);
             } else {
                 broadcast_to_all(user, "[%s] %s\n", user->id, buf);
@@ -785,7 +789,10 @@ void cmd_users(User *user) {
         }
         pthread_mutex_unlock(&g_users_mutex);
     }
+    
+    pthread_mutex_lock(&g_db_mutex);
     db_recent_user(10); // 최근 사용자 목록 업데이트
+    pthread_mutex_unlock(&g_db_mutex);
     
     strcat(user_list, "\n");
     safe_send(user->sock, user_list);
@@ -938,7 +945,11 @@ void cmd_manager(User *user, char *user_id) {
     pthread_mutex_lock(&g_rooms_mutex);
     r->manager = target_user;
     pthread_mutex_unlock(&g_rooms_mutex);
+
+    pthread_mutex_lock(&g_db_mutex);
     db_update_room_manager(r, target_user->id); // 데이터베이스에 방장 정보 업데이트
+    pthread_mutex_unlock(&g_db_mutex);
+    printf("[INFO] User %s is now the manager of room %s\n", target_user->id, r->room_name);
 
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] User '%s' is now the manager of room '%s'.\n", target_user->id, r->room_name);
@@ -980,7 +991,11 @@ void cmd_change(User *user, char *room_name) {
     strncpy(r->room_name, room_name, sizeof(r->room_name) - 1);
     r->room_name[sizeof(r->room_name) - 1] = '\0';
     pthread_mutex_unlock(&g_rooms_mutex);
+
+    pthread_mutex_lock(&g_db_mutex);
     db_update_room_name(r, r->room_name); // 데이터베이스에 방 이름 업데이트
+    pthread_mutex_unlock(&g_db_mutex);
+    printf("[INFO] Room name changed to '%s' by user %s\n", r->room_name, user->id);
 
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] Room name changed to '%s'.\n", r->room_name);
@@ -1103,12 +1118,14 @@ void cmd_create(User *creator, char *room_name) {
 
     // 대화방 리스트에 추가
     list_add_room_unlocked(new_room);
-    pthread_mutex_unlock(&g_rooms_mutex);
-
     // 대화방에 사용자 추가
     room_add_member(new_room, creator);
+    pthread_mutex_unlock(&g_rooms_mutex);
     printf("[INFO] User %s created room '%s' (ID: %u) and joined.\n", creator->id, new_room->room_name, new_room->no);
+
+    pthread_mutex_lock(&g_db_mutex);
     db_create_room(new_room); // 데이터베이스에 대화방 정보 저장
+    pthread_mutex_unlock(&g_db_mutex);
 
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] Room '%s' (ID: %u) created and joined.\n", new_room->room_name, new_room->no);
@@ -1154,6 +1171,11 @@ void cmd_join(User *user, char *room_no_str) {
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] Joined room '%s' (ID: %u).\n", target_room->room_name, target_room->no);
     safe_send(user->sock, success_msg);
+    
+    pthread_mutex_lock(&g_db_mutex);
+    db_get_room_messages(target_room, user); // 대화방 메시지 로드
+    pthread_mutex_unlock(&g_db_mutex);
+
     broadcast_to_room(target_room, user, "[Server] %s joined the room.\n", user->id);
     return;
 }
