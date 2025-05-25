@@ -701,14 +701,7 @@ void *client_process(void *args) {
 
 // 서버 명령어 처리 함수
 void process_server_cmd(int epfd, int server_sock) {
-    char cmd_buf[BUFFER_SIZE];
-
-    // 서버 명령어 입력
-    if (!fgets(cmd_buf, sizeof(cmd_buf) - 1, stdin)) {
-        printf("\n[INFO] Server shutting down... (EOF on stdin).\n");
-        server_quit();
-        return;
-    }
+    char cmd_buf[BUFFER_SIZE] = {0};
 
     // 개행 문자 제거
     cmd_buf[strcspn(cmd_buf, "\r\n")] = '\0';
@@ -716,17 +709,19 @@ void process_server_cmd(int epfd, int server_sock) {
     char *cmd = strtok(cmd_buf, " "); // 첫 번째 토큰을 명령어로 사용
     char *arg = strtok(NULL, ""); // 나머지 토큰을 인자로 사용
 
-    if (!cmd || strlen(cmd) == 0) {
-        printf("No command entered. Available: users, rooms, recent_users, quit\n");
-        fflush(stdout); // 버퍼 비우기
-        return;
-    }
-
     if (strcmp(cmd, "users") == 0) {
         server_user();
     }
     else if (strcmp(cmd, "rooms") == 0) {
         server_room();
+    }
+    else if (strcmp(cmd, "quit") == 0) {
+        server_quit();
+    }
+    else if (strcmp(cmd, "help") == 0) {
+        printf("Available commands: users, rooms, recent_users, quit\n");
+        fflush(stdout); // 버퍼 비우기
+        return;
     }
     else if (strcmp(cmd, "recent_users") == 0) {
         // 데이터베이스로부터 최근 사용자 목록 출력
