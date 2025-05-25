@@ -11,14 +11,14 @@ GTK_LIBS = $(shell pkg-config --libs gtk+-3.0)
 TARGET = chat_client_gtk
 
 # Source file
-SRC = chat_client_gtk.c
+SRC = chat_client_gtk.c db_helper.c
 
 # Default target: build the executable
 all: $(TARGET)
 
 # Rule to build the executable
 $(TARGET): $(SRC)
-	$(CC) $(SRC) -o $(TARGET) $(GTK_CFLAGS) $(GTK_LIBS) -pthread
+	$(CC) $(SRC) -o $(TARGET) $(GTK_CFLAGS) $(GTK_LIBS) -lsqlite3 -pthread
 
 # Clean target: remove built files
 clean:
