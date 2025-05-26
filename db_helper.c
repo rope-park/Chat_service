@@ -31,22 +31,20 @@ void db_init() {
         "id INTEGER PRIMARY KEY AUTOINCREMENT, "
         "room_no INTEGER UNIQUE, "
         "room_name TEXT NOT NULL, "
-        "manager_id INTEGER, "
+        "manager_id TEXT, "
         "member_count INTEGER DEFAULT 0, "
         "created_time DATETIME DEFAULT (DATETIME('NOW', 'LOCALTIME')), "
-        "FOREIGN KEY(manager_id) REFERENCES user(id) ON DELETE SET NULL"
-        ");";
+        "FOREIGN KEY(manager_id) REFERENCES user(id));";
 
     const char *sql_message_tbl =
         "CREATE TABLE IF NOT EXISTS message ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT, "
         "room_no INTEGER, "
-        "sender_id INTEGER, "
+        "sender_id TEXT, "
         "context TEXT, "
         "timestamp DATETIME DEFAULT (DATETIME('NOW', 'LOCALTIME')), "
-        "FOREIGN KEY(room_no) REFERENCES room(room_no) ON DELETE CASCADE, "
-        "FOREIGN KEY(sender_id) REFERENCES user(id) ON DELETE SET NULL"
-        ");";
+        "FOREIGN KEY(room_no) REFERENCES room(room_no), "
+        "FOREIGN KEY(sender_id) REFERENCES user(user_id));";
 
     char *err_msg;
     rc = sqlite3_exec(db, sql_user_tbl, 0, 0, &err_msg);
@@ -136,102 +134,24 @@ void db_update_user_id(User *user, const char *new_id) {
     sqlite3_finalize(stmt);
 }
 
-// 사용자 연결 상태 업데이트 함수 - 사용자 재접속/종료 시 업데이트
-void db_update_user_connect(User *user) {
+// 사용자 연결 상태 업데이트 함수 - 사용자의 연결 상태 업데이트
+void db_update_user_connected(User *user, int status) {
     const char *sql =
-        "UPDATE user SET connected = 0 WHERE sock_no = ?;";
-    
+        "UPDATE user SET connected = ? WHERE sock_no = ?;";
+
     sqlite3_stmt *stmt;
     sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, user->sock);
+    sqlite3_bind_int(stmt, 1, status);
+    sqlite3_bind_int(stmt, 2, user->sock);
     int rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
-        fprintf(stderr, "SQL disconnect user error: %s\n", sqlite3_errmsg(db));
+        fprintf(stderr, "SQL update user connected error: %s\n", sqlite3_errmsg(db));
     } else {
-        fprintf(stderr, "User '%s' disconnected successfully\n", user->id);
+        fprintf(stderr, "User '%s' connected status updated to '%d' successfully\n", user->id, status);
     }
     sqlite3_finalize(stmt);
 }
 
-// 모든 사용자 목록 가져오기 함수 - 데이터베이스에서 모든 사용자 정보를 가져옴
-void db_get_all_users() {
-    const char *sql = 
-        "SELECT user_id, connected, timestamp FROM user;";
-    
-    sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-        const char *user_id = (const char *)sqlite3_column_text(stmt, 0);
-        int connected = sqlite3_column_int(stmt, 1);
-        const char *timestamp = (const char *)sqlite3_column_text(stmt, 2);
-        printf("User: %s, Connected: %d, Timestamp: %s\n", user_id, connected, timestamp);
-    }
-    sqlite3_finalize(stmt);
-}
-
-// 사용자 정보 가져오기 함수 - 특정 사용자의 정보를 데이터베이스에서 가져옴
-void db_get_user_info(User *user) {
-    const char *sql = 
-        "SELECT user_id, connected, timestamp FROM user WHERE sock_no = ?;";
-    
-    sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, user->sock);
-    
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
-        const char *user_id = (const char *)sqlite3_column_text(stmt, 0);
-        int connected = sqlite3_column_int(stmt, 1);
-        const char *timestamp = (const char *)sqlite3_column_text(stmt, 2);
-        printf("User: %s, Connected: %d, Timestamp: %s\n", user_id, connected, timestamp);
-    } else {
-        fprintf(stderr, "No user found with sock_no %d\n", user->sock);
-    }
-    sqlite3_finalize(stmt);
-}
-
-// 사용자 ID로 검색 함수 - 특정 사용자 ID를 가진 사용자를 데이터베이스에서 검색
-void db_get_user_by_id(const char *user_id) {
-    const char *sql = 
-        "SELECT sock_no, connected, timestamp FROM user WHERE user_id = ?;";
-    
-    sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    sqlite3_bind_text(stmt, 1, user_id, -1, SQLITE_STATIC);
-    
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
-        int sock_no = sqlite3_column_int(stmt, 0);
-        int connected = sqlite3_column_int(stmt, 1);
-        const char *timestamp = (const char *)sqlite3_column_text(stmt, 2);
-        printf("User: %s, Sock No: %d, Connected: %d, Timestamp: %s\n", user_id, sock_no, connected, timestamp);
-    } else {
-        fprintf(stderr, "No user found with ID '%s'\n", user_id);
-    }
-    sqlite3_finalize(stmt);
-}
-
-// 소켓 번호로 사용자 검색 함수 - 특정 소켓 번호를 가진 사용자를 데이터베이스에서 검색
-void db_get_user_by_sock(int sock) {
-    const char *sql = 
-        "SELECT user_id, connected, timestamp FROM user WHERE sock_no = ?;";
-    
-    sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, sock);
-    
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
-        const char *user_id = (const char *)sqlite3_column_text(stmt, 0);
-        int connected = sqlite3_column_int(stmt, 1);
-        const char *timestamp = (const char *)sqlite3_column_text(stmt, 2);
-        printf("User: %s, Sock No: %d, Connected: %d, Timestamp: %s\n", user_id, sock, connected, timestamp);
-    } else {
-        fprintf(stderr, "No user found with sock_no %d\n", sock);
-    }
-    sqlite3_finalize(stmt);
-}
-
-
-// ======== 대화방 관련 함수 ========
 // 대화방 생성 함수 - 대화방 정보를 데이터베이스에 삽입
 void db_create_room(Room *room) {
     const char *sql =
@@ -248,23 +168,6 @@ void db_create_room(Room *room) {
         fprintf(stderr, "SQL create room error: %s\n", sqlite3_errmsg(db));
     } else {
         fprintf(stderr, "Room '%s' created successfully\n", room->room_name);
-    }
-    sqlite3_finalize(stmt);
-}
-
-// 대화방 삭제 함수 - 대화방 정보를 데이터베이스에서 삭제
-void db_remove_room(Room *room) {
-    const char *sql =
-        "DELETE FROM room WHERE room_no = ?;";
-
-    sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, room->no);
-    int rc = sqlite3_step(stmt);
-    if (rc != SQLITE_DONE) {
-        fprintf(stderr, "SQL remove room error: %s\n", sqlite3_errmsg(db));
-    } else {
-        fprintf(stderr, "Room '%s' removed successfully\n", room->room_name);
     }
     sqlite3_finalize(stmt);
 }
@@ -323,145 +226,6 @@ void db_update_room_member_count(Room *room) {
     sqlite3_finalize(stmt);
 }
 
-// 대화방에 사용자 추가 함수 - 대화방에 사용자를 추가하고 멤버 수 업데이트
-void db_add_user_to_room(Room *room, User *user) {
-    const char *sql =
-        "INSERT INTO room (room_no, room_name, manager_id, member_count) "
-        "VALUES (?, ?, ?, 1);";
-
-    sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, room->no);
-    sqlite3_bind_text(stmt, 2, room->room_name, -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 3, user->id, -1, SQLITE_STATIC);
-    int rc = sqlite3_step(stmt);
-    if (rc != SQLITE_DONE) {
-        fprintf(stderr, "SQL add user to room error: %s\n", sqlite3_errmsg(db));
-    } else {
-        fprintf(stderr, "User '%s' added to room '%s' successfully\n", user->id, room->room_name);
-    }
-    sqlite3_finalize(stmt);
-}
-
-// 대화방에서 사용자 제거 함수 - 대화방에서 사용자를 제거하고 멤버 수 업데이트
-void db_remove_user_from_room(Room *room, User *user) {
-    const char *sql =
-        "DELETE FROM room WHERE room_no = ? AND manager_id = ?;";
-
-    sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, room->no);
-    sqlite3_bind_text(stmt, 2, user->id, -1, SQLITE_STATIC);
-    int rc = sqlite3_step(stmt);
-    if (rc != SQLITE_DONE) {
-        fprintf(stderr, "SQL remove user from room error: %s\n", sqlite3_errmsg(db));
-    } else {
-        fprintf(stderr, "User '%s' removed from room '%s' successfully\n", user->id, room->room_name);
-    }
-    sqlite3_finalize(stmt);
-}
-
-// 대화방 정보 가져오기 함수 - 특정 대화방 정보를 데이터베이스에서 가져옴
-void db_get_room_info(Room *room) {
-    const char *sql =
-        "SELECT room_name, manager_id, member_count, created_time FROM room WHERE room_no = ?;";
-
-    sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, room->no);
-    
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
-        const char *room_name = (const char *)sqlite3_column_text(stmt, 0);
-        const char *manager_id = (const char *)sqlite3_column_text(stmt, 1);
-        int member_count = sqlite3_column_int(stmt, 2);
-        const char *created_time = (const char *)sqlite3_column_text(stmt, 3);
-        printf("Room: %s, Manager: %s, Members: %d, Created: %s\n", room_name, manager_id, member_count, created_time);
-    } else {
-        fprintf(stderr, "No room found with no %d\n", room->no);
-    }
-    sqlite3_finalize(stmt);
-}
-
-// 대화방 이름으로 검색 함수 - 특정 대화방 이름을 가진 대화방을 데이터베이스에서 검색
-void db_get_room_by_name(const char *room_name) {
-    const char *sql =
-        "SELECT room_no, manager_id, member_count, created_time FROM room WHERE room_name = ?;";
-
-    sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    sqlite3_bind_text(stmt, 1, room_name, -1, SQLITE_STATIC);
-    
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
-        int room_no = sqlite3_column_int(stmt, 0);
-        const char *manager_id = (const char *)sqlite3_column_text(stmt, 1);
-        int member_count = sqlite3_column_int(stmt, 2);
-        const char *created_time = (const char *)sqlite3_column_text(stmt, 3);
-        printf("Room: %s, No: %d, Manager: %s, Members: %d, Created: %s\n", room_name, room_no, manager_id, member_count, created_time);
-    } else {
-        fprintf(stderr, "No room found with name '%s'\n", room_name);
-    }
-    sqlite3_finalize(stmt);
-}
-
-// 대화방 ID로 검색 함수 - 특정 대화방 번호를 가진 대화방을 데이터베이스에서 검색
-void db_get_room_by_no(unsigned int room_no) {
-    const char *sql =
-        "SELECT room_name, manager_id, member_count, created_time FROM room WHERE room_no = ?;";
-
-    sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, room_no);
-    
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
-        const char *room_name = (const char *)sqlite3_column_text(stmt, 0);
-        const char *manager_id = (const char *)sqlite3_column_text(stmt, 1);
-        int member_count = sqlite3_column_int(stmt, 2);
-        const char *created_time = (const char *)sqlite3_column_text(stmt, 3);
-        printf("Room No: %d, Name: %s, Manager: %s, Members: %d, Created: %s\n", room_no, room_name, manager_id, member_count, created_time);
-    } else {
-        fprintf(stderr, "No room found with no %d\n", room_no);
-    }
-    sqlite3_finalize(stmt);
-}
-
-// 대화방 목록 가져오기 함수 - 데이터베이스에서 모든 대화방 정보를 가져옴
-void db_get_all_rooms() {
-    const char *sql =
-        "SELECT room_no, room_name, manager_id, member_count, created_time FROM room;";
-
-    sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-        int room_no = sqlite3_column_int(stmt, 0);
-        const char *room_name = (const char *)sqlite3_column_text(stmt, 1);
-        const char *manager_id = (const char *)sqlite3_column_text(stmt, 2);
-        int member_count = sqlite3_column_int(stmt, 3);
-        const char *created_time = (const char *)sqlite3_column_text(stmt, 4);
-        printf("Room No: %d, Name: %s, Manager: %s, Members: %d, Created: %s\n", room_no, room_name, manager_id, member_count, created_time);
-    }
-    sqlite3_finalize(stmt);
-}
-
-// 대화방 참여자 목록 가져오기 함수 - 특정 대화방의 참여자 정보를 데이터베이스에서 가져옴
-void db_get_room_members(Room *room) {
-    const char *sql =
-        "SELECT user_id FROM user WHERE sock_no IN ("
-        "SELECT sock_no FROM room WHERE room_no = ?);";
-
-    sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, room->no);
-    
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-        const char *user_id = (const char *)sqlite3_column_text(stmt, 0);
-        printf("Member: %s\n", user_id);
-    }
-    sqlite3_finalize(stmt);
-}
-
-
-// ======== 메시지 관련 함수 ========
 // 메시지 추가 함수 - 대화방 메시지를 데이터베이스에 삽입
 void db_insert_message(Room *room, User *user, const char *message) {
     const char *sql =
@@ -482,28 +246,7 @@ void db_insert_message(Room *room, User *user, const char *message) {
     sqlite3_finalize(stmt);
 }
 
-// // 대화방 메시지 가져오기 함수 - 사용자 재접속 시 이전에 leave하지 않은 대화방의 메시지를 가져옴
-// 사용자의 최초 대화방 참여 이후부터 현재까지의 메시지를 가져옴
-void db_get_room_message(Room *room, User *user) {
-
-    const char *sql = 
-        "SELECT sender_id, context, timestamp FROM message "
-        "WHERE room_no = ? ORDER BY timestamp ASC;";
-    sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, room->no); 
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-        const char *sender_id = (const char *)sqlite3_column_text(stmt, 0);
-        const char *context = (const char *)sqlite3_column_text(stmt, 1);
-        const char *timestamp = (const char *)sqlite3_column_text(stmt, 2);
-        printf("[%s] %s: %s\n", timestamp, sender_id, context); // 메시지 출력
-    }
-    sqlite3_finalize(stmt);
-}최근 접속 사용자 목록 함수 - 최근 접속한 사용자 정보를 가져옴
-
-
-// ========== 최근 접속 사용자 목록 함수 =========
-// 최근 접속 사용자 목록 함수 - 최근 접속한 사용자 정보를 데이터베이스에서 가져옴
+// 최근 접속 사용자 목록 함수 - 최근 접속한 사용자 정보를 가져옴
 void db_recent_user(int limit) {
     const char *sql =
         "SELECT user_id, connected, timestamp FROM user "
