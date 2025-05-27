@@ -1161,9 +1161,7 @@ void cmd_create(User *creator, char *room_name) {
     pthread_mutex_unlock(&g_rooms_mutex);
     printf("[INFO] User %s created room '%s' (ID: %u) and joined.\n", creator->id, new_room->room_name, new_room->no);
 
-    pthread_mutex_lock(&g_db_mutex);
     db_create_room(new_room); // 데이터베이스에 대화방 정보 저장
-    pthread_mutex_unlock(&g_db_mutex);
 
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] Room '%s' (ID: %u) created and joined.\n", new_room->room_name, new_room->no);
