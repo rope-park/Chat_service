@@ -83,20 +83,31 @@ void db_close() {
 // ======== 사용자 관련 함수 ========
 // 사용자 추가 함수 - 사용자 정보를 데이터베이스에 삽입
 void db_insert_user(User *user) {
-    const char *sql = 
-        "INSERT INTO user (sock_no, user_id, connected) VALUES (?, ?, 1);";
+    if (!user || !user->id) return;
 
+    pthread_mutex_lock(&g_db_mutex);
+
+    const char *sql = "INSERT INTO user (user_id, sock_no, connected) VALUES (?, ?, 1);";
     sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, user->sock);
-    sqlite3_bind_text(stmt, 2, user->id, -1, SQLITE_STATIC);
-    int rc = sqlite3_step(stmt);
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
+    }
+
+    sqlite3_bind_text(stmt, 1, user->id, -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 2, user->sock);
+
+    rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
         fprintf(stderr, "SQL insert user error: %s\n", sqlite3_errmsg(db));
     } else {
-        fprintf(stderr, "User '%s' inserted successfully\n", user->id);
+        printf("[DB] User '%s' inserted (sock=%d)\n", user->id, user->sock);
     }
+
     sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
 }
 
 // 사용자 삭제 함수 - 사용자 정보를 데이터베이스에서 삭제
