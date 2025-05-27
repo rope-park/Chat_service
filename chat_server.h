@@ -55,7 +55,9 @@ extern pthread_mutex_t g_db_mutex;
 // ==== CLI ====
 void server_user(void);                             // users 명령: 사용자 목록
 void server_user_info(User *user, char *id);        // user_info 명령: 사용자 정보 출력
-void serveR_user_info_wrapper(void);                // user_info 명령 래퍼
+void server_user_info_wrapper(void);                // user_info 명령 래퍼
+void server_room_info(User *user, char *room_name); // room_info 명령: 대화방 정보 출력
+void server_room_info_wrapper(void);                // room_info 명령 래퍼
 void server_room(void);                             // rooms 명령: 대화방 목록
 void server_quit(void);                             // quit 명령: 서버 종료
 // ==== 메시지 전송 ====
