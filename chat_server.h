@@ -47,6 +47,7 @@ extern unsigned int g_next_room_no; // 다음 대화방 고유 번호
 // Mutex 사용하여 스레드 상호 배제를 통해 안전하게 처리
 extern pthread_mutex_t g_users_mutex;
 extern pthread_mutex_t g_rooms_mutex;
+extern pthread_mutex_t g_db_mutex;
 
 
 // ==================== 기능 함수 선언 =====================
@@ -106,6 +107,8 @@ void cmd_join(User *user, char *room_no_str);
 void cmd_join_wrapper(User *user, char *args);
 void cmd_leave(User *user);
 void cmd_leave_wrapper(User *user, char *args);
+void cmd_delete_account(User *user);
+void cmd_delete_account_wrapper(User *user, char *args);
 void cmd_help(User *user);
 void cmd_help_wrapper(User *user, char *args);
 
