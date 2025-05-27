@@ -72,7 +72,7 @@ void server_user_info(User *user, char *id) {
     }
 
     pthread_mutex_lock(&g_users_mutex);
-    User *u = find_client_by_id(id);
+    find_client_by_id(id);
     pthread_mutex_unlock(&g_users_mutex);
 
     db_get_user_info(id); // 데이터베이스에서 사용자 정보 가져오기
@@ -697,6 +697,11 @@ void *client_process(void *args) {
                 cmd_delete_account(user);
             }
 
+            // 메시지 삭제
+            else if (strcmp(cmd, "delete_message") == 0) {
+                cmd_delete_message(user, args);
+            }
+
             // 도움말
             else if (strcmp(cmd, "help") == 0) {
                 cmd_help(user);
@@ -1312,8 +1317,8 @@ void cmd_delete_account_wrapper(User *user, char *args) {
 
 // 메시지 삭제 함수 (방장, 본인만 삭제 가능)
 void cmd_delete_message(User *user, char *args) {
-    if (!user || !args) {
-        safe_send(user->sock, "[Server] Usage: /delete_message <message_id>\n");
+    if (!user || !args || strlen(args) == 0) {
+        usage_delete_message(user);
         return;
     }
     int msg_id = atoi(args);
@@ -1356,7 +1361,7 @@ void cmd_delete_message(User *user, char *args) {
         return;
     }
 
-    if (db_remove_message_by_id(msg_id)) {
+    if (db_remove_message()) {
         safe_send(user->sock, "[Server] Message deleted successfully.\n");
     } else {
         safe_send(user->sock, "[Server] Failed to delete message.\n");
@@ -1532,7 +1537,8 @@ int main() {
                             // 이미 DB에 같은 소켓 번호가 있으면 중복 처리
                             safe_send(user->sock, "Socket already in use. Try again later.\n");
                             close(user->sock);
-                            return;
+                            free(user);
+                            continue;
                         }
 
                         list_add_client(user);

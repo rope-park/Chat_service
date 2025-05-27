@@ -113,6 +113,7 @@ void cmd_leave(User *user);
 void cmd_leave_wrapper(User *user, char *args);
 void cmd_delete_account(User *user);
 void cmd_delete_account_wrapper(User *user, char *args);
+void cmd_delete_message(User *user, char *args);
 void cmd_help(User *user);
 void cmd_help_wrapper(User *user, char *args);
 
@@ -123,6 +124,8 @@ void usage_kick(User *user);
 void usage_create(User *user);
 void usage_join(User *user);
 void usage_leave(User *user);
+void usage_delete_account(User *user);
+void usage_delete_message(User *user);
 void usage_help(User *user);
 
 
