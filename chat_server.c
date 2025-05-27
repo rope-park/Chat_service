@@ -979,9 +979,7 @@ void cmd_manager(User *user, char *user_id) {
     r->manager = target_user;
     pthread_mutex_unlock(&g_rooms_mutex);
 
-    pthread_mutex_lock(&g_db_mutex);
     db_update_room_manager(r, target_user->id); // 데이터베이스에 방장 정보 업데이트
-    pthread_mutex_unlock(&g_db_mutex);
     printf("[INFO] User %s is now the manager of room %s\n", target_user->id, r->room_name);
 
     char success_msg[BUFFER_SIZE];
