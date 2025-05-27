@@ -852,5 +852,68 @@ void db_remove_message(Room *room, User *user, const char *message) {
 
 // 대화방 메시지 가져오기 함수 - 특정 대화방의 메시지를 데이터베이스에서 가져옴
 void db_get_room_message(Room *room, User *user) {
+    if (!room || !user) {
+        fprintf(stderr, "Invalid room or user pointer\n");
+        return;
+    }
 
+    pthread_mutex_lock(&g_db_mutex);
+
+    // 1. 사용자의 해당 방 최초 입장 시각 조회
+    const char *sql_first =
+        "SELECT MIN(join_time) FROM room_user WHERE user_id = ? AND room_no = ?;";
+    sqlite3_stmt *stmt_first;
+    int rc = sqlite3_prepare_v2(db, sql_first, -1, &stmt_first, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error (first join): %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
+    }
+    sqlite3_bind_text(stmt_first, 1, user->id, -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt_first, 2, room->no);
+
+    const char *first_join_time = NULL;
+    if (sqlite3_step(stmt_first) == SQLITE_ROW) {
+        first_join_time = (const char *)sqlite3_column_text(stmt_first, 0);
+    }
+    sqlite3_finalize(stmt_first);
+
+    if (!first_join_time) {
+        // 입장 기록이 없으면 메시지 없음
+        safe_send(user->sock, "[Server] No chat history found for you in this room.\n");
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
+    }
+
+    // 2. 최초 입장 시각 이후의 메시지 조회
+    const char *sql_msg =
+        "SELECT sender_id, context, timestamp FROM message "
+        "WHERE room_no = ? AND timestamp >= ? ORDER BY timestamp ASC;";
+    sqlite3_stmt *stmt_msg;
+    rc = sqlite3_prepare_v2(db, sql_msg, -1, &stmt_msg, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error (msg): %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
+    }
+    sqlite3_bind_int(stmt_msg, 1, room->no);
+    sqlite3_bind_text(stmt_msg, 2, first_join_time, -1, SQLITE_STATIC);
+
+    char msg_buf[BUFFER_SIZE];
+    int found = 0;
+    while (sqlite3_step(stmt_msg) == SQLITE_ROW) {
+        const char *sender_id = (const char *)sqlite3_column_text(stmt_msg, 0);
+        const char *context = (const char *)sqlite3_column_text(stmt_msg, 1);
+        const char *timestamp = (const char *)sqlite3_column_text(stmt_msg, 2);
+        snprintf(msg_buf, sizeof(msg_buf), "[%s] %s: %s\n",
+                 timestamp ? timestamp : "Unknown", sender_id ? sender_id : "Unknown", context ? context : "");
+        safe_send(user->sock, msg_buf);
+        found = 1;
+    }
+    if (!found) {
+        safe_send(user->sock, "[Server] No chat history found for you in this room.\n");
+    }
+
+    sqlite3_finalize(stmt_msg);
+    pthread_mutex_unlock(&g_db_mutex);
 }
