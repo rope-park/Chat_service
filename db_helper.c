@@ -201,21 +201,30 @@ void db_update_user_connected(User *user, int status) {
 
 // 모든 사용자 목록 가져오기 함수 - 데이터베이스에서 모든 사용자 정보를 가져옴
 void db_get_all_users() {
+    pthread_mutex_lock(&g_db_mutex);
+
     const char *sql =
         "SELECT sock_no, user_id, connected, timestamp FROM user;";
-
     sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
+    }
     
     // 사용자 목록을 순회하며 정보를 출력
+    printf("%2s\t%16s\t%8s\t%s\n", "sock_no", "ID", "CONNECTED", "TIMESTAMP");
+    printf("=========================================================\n");
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         int sock_no = sqlite3_column_int(stmt, 0);
         const char *user_id = (const char *)sqlite3_column_text(stmt, 1);
         int connected = sqlite3_column_int(stmt, 2);
         const char *timestamp = (const char *)sqlite3_column_text(stmt, 3);
-        printf("Sock: %d, User ID: %s, Connected: %d, Timestamp: %s\n", sock_no, user_id, connected, timestamp);
+        printf("%2d\t%16s\t%8d\t%s\n", sock_no, user_id, connected, timestamp);
     }
     sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
 }
 
 // 사용자 정보 가져오기 함수 - 특정 사용자 정보를 데이터베이스에서 가져옴
