@@ -525,12 +525,46 @@ void db_add_user_to_room(Room *room, User *user) {
     pthread_mutex_unlock(&g_db_mutex);
 }
 
-void db_remove_user_from_room(Room *room, User *user);               // 대화방에서 사용자 제거
-void db_get_room_info(Room *room);                                   // 대화방 정보 가져오기
-void db_get_room_by_name(const char *room_name);                     // 대화방 이름으로 검색
-void db_get_room_by_no(unsigned int room_no);                        // 대화방 번호로 검색
-void db_get_all_rooms();                                             // 모든 대화방 목록 가져오기
-void db_get_room_members(Room *room);     
+// 대화방에서 사용자 제거 함수 - 대화방에서 사용자를 제거
+void db_remove_user_from_room(Room *room, User *user) {
+    if (!room || !user || !user->id) {
+        fprintf(stderr, "Invalid room or user info\n");
+        return;
+    }
+
+    pthread_mutex_lock(&g_db_mutex);
+
+    const char *sql =
+        "DELETE FROM room_user WHERE room_no = ? AND user_id = ?;";
+    
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
+    }
+
+    sqlite3_bind_int(stmt, 1, room->no);
+    sqlite3_bind_text(stmt, 2, user->id, -1, SQLITE_STATIC);
+    
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        fprintf(stderr, "SQL remove user from room error: %s\n", sqlite3_errmsg(db));
+    } else {
+        printf("[DB] User '%s' removed from room '%s' successfully\n", user->id, room->room_name);
+        db_update_room_member_count(room); // 멤버 수 업데이트
+    }
+    
+    sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
+}
+
+void db_get_room_info(Room *room);
+void db_get_room_by_name(const char *room_name);
+void db_get_room_by_no(unsigned int room_no);
+void db_get_all_rooms();
+void db_get_room_members(Room *room);
 
 
 // 메시지 추가 함수 - 대화방 메시지를 데이터베이스에 삽입
