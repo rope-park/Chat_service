@@ -1098,11 +1098,12 @@ void cmd_kick(User *user, char *user_id) {
 
     // 대화방에서 사용자 제거
     room_remove_member(r, target_user);
-    destroy_room_if_empty(r); // 대화방이 비어있으면 제거
-    pthread_mutex_lock(&g_db_mutex);
-    db_remove_user_from_room(r, target_user); // 데이터베이스에서 사용자 제거
     db_update_room_member_count(r); // 데이터베이스에서 대화방 참여자 수 업데이트
-    pthread_mutex_unlock(&g_db_mutex);
+    destroy_room_if_empty(r); // 대화방이 비어있으면 제거
+    
+    db_remove_user_from_room(r, target_user); // 데이터베이스에서 사용자 제거
+    
+    
     printf("[INFO] User %s has been kicked from room %s by user %s\n", target_user->id, r->room_name, user->id);
 
     char success_msg[BUFFER_SIZE];
@@ -1212,16 +1213,16 @@ void cmd_join(User *user, char *room_no_str) {
     }
 
     room_add_member(target_room, user);
+    db_update_room_member_count(target_room); // 데이터베이스에 대화방 참여자 수 업데이트
+    
     printf("[INFO] User %s joined room '%s' (ID: %u).\n", user->id, target_room->room_name, target_room->no);
+    
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] Joined room '%s' (ID: %u).\n", target_room->room_name, target_room->no);
     safe_send(user->sock, success_msg);
     
-    pthread_mutex_lock(&g_db_mutex);
     db_get_room_message(target_room, user); // 대화방 메시지 로드
-    db_update_room_member_count(target_room); // 데이터베이스에 대화방 참여자 수 업데이트
-    pthread_mutex_unlock(&g_db_mutex);
-
+    
     broadcast_to_room(target_room, user, "[Server] %s joined the room.\n", user->id);
     return;
 }
@@ -1246,12 +1247,10 @@ void cmd_leave(User *user) {
     Room *current_room = user->room;
     broadcast_to_room(current_room, user, "[Server] %s left the room.\n", user->id);
     // 대화방에서 사용자 제거
-    room_remove_member(current_room, user);
-    // 데이터베이스에 대화방 참여자 수 업데이트
-    pthread_mutex_lock(&g_db_mutex);
-    db_update_room_member_count(current_room);
-    pthread_mutex_unlock(&g_db_mutex);
-
+    
+    db_remove_user_from_room(current_room, user); // 데이터베이스에서 사용자 제거
+    db_update_room_member_count(current_room); // 데이터베이스에 대화방 참여자 수 업데이트
+    
     // 퇴장 메시지 전송
     printf("[INFO] User %s left room '%s' (ID: %u).\n", user->id, current_room->room_name, current_room->no);
     safe_send(user->sock, "[Server] You left the room.\n");
