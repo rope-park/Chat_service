@@ -411,20 +411,33 @@ void db_update_room_name(Room *room, const char *new_name) {
 
 // 대화방 방장 변경 함수 - 대화방 방장 ID 업데이트
 void db_update_room_manager(Room *room, const char *new_manager_id) {
+    if (!room || !new_manager_id || strlen(new_manager_id) == 0) {
+        fprintf(stderr, "Invalid room or new manager ID\n");
+        return;
+    }
+
+    pthread_mutex_lock(&g_db_mutex);
+
     const char *sql =
         "UPDATE room SET manager_id = ? WHERE room_no = ?;";
-
     sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
+    }
+
     sqlite3_bind_text(stmt, 1, new_manager_id, -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, room->no);
-    int rc = sqlite3_step(stmt);
-    if (rc != SQLITE_DONE) {
+    
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
         fprintf(stderr, "SQL update room manager error: %s\n", sqlite3_errmsg(db));
     } else {
-        fprintf(stderr, "Room manager updated to '%s' successfully\n", new_manager_id);
+        printf("[DB] Room manager updated to '%s' successfully\n", new_manager_id);
     }
     sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
 }
 
 // 대화방 멤버 수 업데이트 함수 - 대화방 참여자 수 업데이트
