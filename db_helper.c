@@ -560,7 +560,47 @@ void db_remove_user_from_room(Room *room, User *user) {
     pthread_mutex_unlock(&g_db_mutex);
 }
 
-void db_get_room_info(Room *room);
+// 대화방 정보 가져오기 함수 - 대화방 정보를 데이터베이스에서 가져옴
+void db_get_room_info(Room *room){
+    if (!room) {
+        fprintf(stderr, "Invalid room pointer\n");
+        return;
+    }
+
+    pthread_mutex_lock(&g_db_mutex);
+
+    const char *sql =
+        "SELECT room_no, room_name, manager_id, member_count, created_time "
+        "FROM room WHERE room_no = ?;";
+    
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
+    }
+
+    sqlite3_bind_int(stmt, 1, room->no);
+    
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        room->no = sqlite3_column_int(stmt, 0);
+        const char *name = (const char *)sqlite3_column_text(stmt, 1);
+        strncpy(room->room_name, name ? name : "", sizeof(room->room_name) - 1);
+        const char *manager_id = (const char *)sqlite3_column_text(stmt, 2);
+        strncpy(room->manager->id, manager_id ? manager_id : "", sizeof(room->manager->id) - 1);
+        room->member_count = sqlite3_column_int(stmt, 3);
+        const char *created_time = (const char *)sqlite3_column_text(stmt, 4);
+        printf("[DB] Room Info: No=%u, Name='%s', Manager='%s', Members=%d, Created='%s'\n",
+               room->no, room->room_name, room->manager->id, room->member_count, created_time);
+    } else {
+        fprintf(stderr, "SQL get room info error: %s\n", sqlite3_errmsg(db));
+    }
+    
+    sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
+}
+
 void db_get_room_by_name(const char *room_name);
 void db_get_room_by_no(unsigned int room_no);
 void db_get_all_rooms();
