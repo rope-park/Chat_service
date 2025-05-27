@@ -1168,6 +1168,8 @@ void cmd_create(User *creator, char *room_name) {
     list_add_room_unlocked(new_room);
     // 대화방에 사용자 추가
     room_add_member(new_room, creator);
+    db_add_user_to_room(new_room, creator); // 데이터베이스에 사용자 추가
+    db_update_room_member_count(new_room); // 데이터베이스에 대화방 참여자 수 업데이트
     pthread_mutex_unlock(&g_rooms_mutex);
     printf("[INFO] User %s created room '%s' (ID: %u) and joined.\n", creator->id, new_room->room_name, new_room->no);
 
@@ -1213,6 +1215,7 @@ void cmd_join(User *user, char *room_no_str) {
     }
 
     room_add_member(target_room, user);
+    db_add_user_to_room(target_room, user); // 데이터베이스에 사용자 추가
     db_update_room_member_count(target_room); // 데이터베이스에 대화방 참여자 수 업데이트
     
     printf("[INFO] User %s joined room '%s' (ID: %u).\n", user->id, target_room->room_name, target_room->no);
