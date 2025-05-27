@@ -87,7 +87,8 @@ void db_insert_user(User *user) {
 
     pthread_mutex_lock(&g_db_mutex);
 
-    const char *sql = "INSERT INTO user (user_id, sock_no, connected) VALUES (?, ?, 1);";
+    const char *sql =
+        "INSERT INTO user (user_id, sock_no, connected) VALUES (?, ?, 1);";
     sqlite3_stmt *stmt;
     int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
@@ -112,19 +113,30 @@ void db_insert_user(User *user) {
 
 // 사용자 삭제 함수 - 사용자 정보를 데이터베이스에서 삭제
 void db_remove_user(User *user) {
-    const char *sql =
-        "DELETE FROM user WHERE sock_no = ?;";
+    if (!user || !user->id) return;
 
+    pthread_mutex_lock(&g_db_mutex);
+
+    const char *sql =
+        "DELETE FROM user WHERE user_id = ?;";
     sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, user->sock);
-    int rc = sqlite3_step(stmt);
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
+    }
+
+    sqlite3_bind_text(stmt, 1, user->id, -1, SQLITE_STATIC);
+
+    rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
         fprintf(stderr, "SQL remove user error: %s\n", sqlite3_errmsg(db));
     } else {
-        fprintf(stderr, "User '%s' removed successfully\n", user->id);
+        fprintf(stderr, "[DB] User '%s' removed successfully\n", user->id);
     }
     sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
 }
 
 // 사용자 ID 변경 함수 - 사용자 ID 업데이트
