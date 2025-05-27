@@ -30,7 +30,7 @@ void db_init() {
         "CREATE TABLE IF NOT EXISTS room ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT, "
         "room_no INTEGER UNIQUE, "
-        "room_name TEXT NOT NULL, "
+        "room_name TEXT NOT NULL UNIQUE, "
         "manager_id TEXT, "
         "member_count INTEGER DEFAULT 0, "
         "created_time DATETIME DEFAULT (DATETIME('NOW', 'LOCALTIME')), "
@@ -133,7 +133,7 @@ void db_remove_user(User *user) {
     if (rc != SQLITE_DONE) {
         fprintf(stderr, "SQL remove user error: %s\n", sqlite3_errmsg(db));
     } else {
-        fprintf(stderr, "[DB] User '%s' removed successfully\n", user->id);
+        printf("[DB] User '%s' removed successfully\n", user->id);
     }
     sqlite3_finalize(stmt);
     pthread_mutex_unlock(&g_db_mutex);
@@ -193,7 +193,7 @@ void db_update_user_connected(User *user, int status) {
     if (rc != SQLITE_DONE) {
         fprintf(stderr, "SQL update user connected error: %s\n", sqlite3_errmsg(db));
     } else {
-        fprintf(stderr, "[DB] User '%s' connected status updated to '%d' successfully\n", user->id, status);
+        printf("[DB] User '%s' connected status updated to '%d' successfully\n", user->id, status);
     }
     sqlite3_finalize(stmt);
     pthread_mutex_unlock(&g_db_mutex);
@@ -257,7 +257,7 @@ void db_get_user_info(const char *user_id) {
         printf("Sock: %d, User ID: %s, Connected: %d, Timestamp: %s\n", sock_no, user_id, connected, timestamp);
     } else {
         fprintf(stderr, "SQL get user info error: %s\n", sqlite3_errmsg(db));
-        fprintf(stderr, "[DB] User info retrieved for user_id %d\n", user_id);
+        /*fprintf(stderr, "[DB] User info retrieved for user_id %d\n", user_id);*/
     }
     sqlite3_finalize(stmt);
     pthread_mutex_unlock(&g_db_mutex);
@@ -343,7 +343,7 @@ void db_create_room(Room *room) {
     if (rc != SQLITE_DONE) {
         fprintf(stderr, "SQL create room error: %s\n", sqlite3_errmsg(db));
     } else {
-        fprintf(stderr, "Room '%s' created successfully\n", room->room_name);
+        printf("[DB] Room '%s' (room_no=%u) created successfully\n", room->room_name, room->no);
     }
     sqlite3_finalize(stmt);
     pthread_mutex_unlock(&g_db_mutex);
@@ -377,22 +377,36 @@ void db_remove_room(Room *room) {
     sqlite3_finalize(stmt);
     pthread_mutex_unlock(&g_db_mutex);
 }
+
 // 대화방 이름 변경 함수 - 대화방 이름 업데이트
 void db_update_room_name(Room *room, const char *new_name) {
+    if (!room || !new_name || strlen(new_name) == 0) {
+        fprintf(stderr, "Invalid room or new name\n");
+        return;
+    }
+
+    pthread_mutex_lock(&g_db_mutex);
+
     const char *sql =
         "UPDATE room SET room_name = ? WHERE room_no = ?;";
-    
     sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
+    }
     sqlite3_bind_text(stmt, 1, new_name, -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, room->no);
-    int rc = sqlite3_step(stmt);
+
+    rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
         fprintf(stderr, "SQL update room name error: %s\n", sqlite3_errmsg(db));
     } else {
-        fprintf(stderr, "Room name updated to '%s' successfully\n", new_name);
+        printf("[DB] Room name updated to '%s' (room_no=%u) successfully\n", new_name, room->no);
     }
     sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
 }
 
 // 대화방 방장 변경 함수 - 대화방 방장 ID 업데이트
