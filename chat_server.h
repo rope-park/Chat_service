@@ -53,9 +53,11 @@ extern pthread_mutex_t g_db_mutex;
 // ==================== 기능 함수 선언 =====================
 // ======== 서버부 ========
 // ==== CLI ====
-void server_user(void);             // users 명령: 사용자 목록
-void server_room(void);             // rooms 명령: 대화방 목록
-void server_quit(void);             // quit 명령: 서버 종료
+void server_user(void);                             // users 명령: 사용자 목록
+void server_user_info(User *user, char *id);        // user_info 명령: 사용자 정보 출력
+void serveR_user_info_wrapper(void);                // user_info 명령 래퍼
+void server_room(void);                             // rooms 명령: 대화방 목록
+void server_quit(void);                             // quit 명령: 서버 종료
 // ==== 메시지 전송 ====
 ssize_t safe_send(int sock, const char *msg);
 void broadcast_to_room(Room *room, User *sender, const char *format, ...);

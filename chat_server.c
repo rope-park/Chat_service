@@ -31,6 +31,7 @@ pthread_mutex_t g_db_mutex    = PTHREAD_MUTEX_INITIALIZER;
 // command 테이블 (서버)
 server_cmd_t cmd_tbl_server[] = {
     {"users", server_user, "Show all users"},
+    {"user_info", server_user_info_wrapper, "Show user info by ID"},
     {"recent_users", server_user, "Show recent users"},
     {"rooms", server_room, "Show all chatrooms"},
     {"quit", server_quit, "Quit server"},
@@ -59,6 +60,35 @@ client_cmd_t cmd_tbl_client[] = {
 // 사용자 목록 정보 출력 함수
 void server_user(void) {
     db_get_all_users(); // 데이터베이스에서 모든 사용자 정보 가져오기
+}
+
+// 특정 사용자 정보 출력 함수 - 사용자 ID로 검색
+void server_user_info(User *user, char *id) {
+    if (!id || strlen(id) == 0) {
+        printf("Usage: user_info <user_id>\n");
+        return;
+    }
+
+    pthread_mutex_lock(&g_users_mutex);
+    User *u = find_client_by_id(id);
+    pthread_mutex_unlock(&g_users_mutex);
+
+    db_get_user_info(id); // 데이터베이스에서 사용자 정보 가져오기
+}
+
+// typedef에서 warning
+void server_user_info_wrapper() {
+    char id[20];
+    printf("Enter user ID to get info: ");
+    fflush(stdout);
+    if (fgets(id, sizeof(id), stdin) == NULL) {
+        perror("fgets error");
+        return;
+    }
+    // 개행 문자 제거
+    id[strcspn(id, "\r\n")] = '\0';
+
+    server_user_info(NULL, id); // 사용자 정보 출력 함수 호출
 }
 
 // 생성된 대화방 정보 출력 함수
@@ -720,8 +750,11 @@ void process_server_cmd(int epfd, int server_sock) {
     else if (strcmp(cmd, "quit") == 0) {
         server_quit();
     }
+    else if (strcmp(cmd, "user_info") == 0) {
+        server_user_info_wrapper();
+    }
     else if (strcmp(cmd, "help") == 0) {
-        printf("Available commands: users, rooms, recent_users, quit\n");
+        printf("Available commands: users, rooms, user_iinfo, recent_users, quit\n");
         fflush(stdout); // 버퍼 비우기
         return;
     }
