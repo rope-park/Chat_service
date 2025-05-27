@@ -887,11 +887,20 @@ void cmd_id(User *user, char *args) {
         return;
     }
 
+    // DB에서 중복 체크
+    if (db_check_user_id(new_id)) {
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "[Server] ID '%s' is already taken in the database.\n", new_id);
+        safe_send(user->sock, error_msg);
+        return;
+    }
+
+    db_update_user_id(user, new_id); // 데이터베이스에 ID 업데이트
+    
     // ID 변경
     printf("[INFO] User %s changed ID to %s\n", user->id, new_id);
     strncpy(user->id, new_id, sizeof(user->id) -1);
     user->id[sizeof(user->id) - 1] = '\0';
-    db_update_user_id(user, new_id); // 데이터베이스에 ID 업데이트
 
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] ID updated to %s.\n", user->id);
