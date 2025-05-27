@@ -192,6 +192,27 @@ void db_get_user_info(User *user) {
     sqlite3_finalize(stmt);
 }
 
+// 사용자 ID로 검색 함수 - 특정 사용자 ID를 데이터베이스에서 검색
+void db_get_user_by_id(const char *user_id) {
+    const char *sql = 
+        "SELECT sock_no, user_id, connected, timestamp FROM user WHERE user_id = ?;";
+    
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    sqlite3_bind_text(stmt, 1, user_id, -1, SQLITE_STATIC);
+    int rc = sqlite3_step(stmt);
+    if (rc == SQLITE_ROW) {
+        int sock_no = sqlite3_column_int(stmt, 0);
+        const char *id = (const char *)sqlite3_column_text(stmt, 1);
+        int connected = sqlite3_column_int(stmt, 2);
+        const char *timestamp = (const char *)sqlite3_column_text(stmt, 3);
+        printf("Sock: %d, User ID: %s, Connected: %d, Timestamp: %s\n", sock_no, id, connected, timestamp);
+    } else {
+        fprintf(stderr, "SQL get user by ID error: %s\n", sqlite3_errmsg(db));
+    }
+    sqlite3_finalize(stmt);
+}
+
 // ======= 대화방 관련 함수 ========
 // 대화방 생성 함수 - 대화방 정보를 데이터베이스에 삽입
 void db_create_room(Room *room) {
