@@ -330,6 +330,38 @@ int db_get_user_by_sock(int sock) {
     return exists; // 존재 여부 반환
 }
 
+// 최근 접속 사용자 목록 가져오기 함수 - 최근 접속한 사용자 목록을 가져옴
+void db_recent_user(int limit) {
+    pthread_mutex_lock(&g_db_mutex);
+
+    const char *sql =
+        "SELECT user_id, sock_no, connected, timestamp FROM user "
+        "ORDER BY timestamp DESC LIMIT ?;";
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
+    }
+    
+    sqlite3_bind_int(stmt, 1, limit);
+    
+    printf("%16s\t%2s\t%8s\t%s\n", "ID", "sock_no", "CONNECTED", "TIMESTAMP");
+    printf("=========================================================\n");
+    
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char *user_id = (const char *)sqlite3_column_text(stmt, 0);
+        int sock_no = sqlite3_column_int(stmt, 1);
+        int connected = sqlite3_column_int(stmt, 2);
+        const char *timestamp = (const char *)sqlite3_column_text(stmt, 3);
+        printf("%16s\t%2d\t%8d\t%s\n", user_id, sock_no, connected, timestamp);
+    }
+    
+    sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
+
+}
 
 // ======= 대화방 관련 함수 ========
 // 대화방 생성 함수 - 대화방 정보를 데이터베이스에 삽입
@@ -680,46 +712,85 @@ void db_get_room_by_no(unsigned int room_no) {
     pthread_mutex_unlock(&g_db_mutex);
 }
 
+// 모든 대화방 목록 가져오기 함수 - 데이터베이스에서 모든 대화방 정보를 가져옴
+void db_get_all_rooms() {
+    pthread_mutex_lock(&g_db_mutex);
 
-void db_get_all_rooms();
-void db_get_room_members(Room *room);
-
-
-// 메시지 추가 함수 - 대화방 메시지를 데이터베이스에 삽입
-void db_insert_message(Room *room, User *user, const char *message) {
     const char *sql =
-        "INSERT INTO message (room_no, sender_id, context) "
-        "VALUES (?, ?, ?);";
-
+        "SELECT room_no, room_name, manager_id, member_count, created_time "
+        "FROM room;";
+    
     sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, room->no);
-    sqlite3_bind_text(stmt, 2, user->id, -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 3, message, -1, SQLITE_STATIC);
-    int rc = sqlite3_step(stmt);
-    if (rc != SQLITE_DONE) {
-        fprintf(stderr, "SQL insert message error: %s\n", sqlite3_errmsg(db));
-    } else {
-        fprintf(stderr, "Message from '%s' in room '%s' inserted successfully\n", user->id, room->room_name);
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
     }
-    sqlite3_finalize(stmt);
-}
 
-// 최근 접속 사용자 목록 함수 - 최근 접속한 사용자 정보를 가져옴
-void db_recent_user(int limit) {
-    const char *sql =
-        "SELECT user_id, connected, timestamp FROM user "
-        "WHERE connected = 1 ORDER BY timestamp DESC LIMIT ?;";
+    printf("%4s%20s\t%12s%8s\t%s\n", "ROOM ID", "ROOM NAME", "CREATED TIME", "#USER", "MEMBER");
+    printf("==============================================================================================================\n");
 
-    sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, limit);
     
     while (sqlite3_step(stmt) == SQLITE_ROW) {
-        const char *user_id = (const char *)sqlite3_column_text(stmt, 0);
-        int connected = sqlite3_column_int(stmt, 1);
-        const char *timestamp = (const char *)sqlite3_column_text(stmt, 2);
-        printf("User: %s, Connected: %d, Timestamp: %s\n", user_id, connected, timestamp);
+        unsigned int room_no = sqlite3_column_int(stmt, 0);
+        const char *room_name = (const char *)sqlite3_column_text(stmt, 1);
+        const char *manager_id = (const char *)sqlite3_column_text(stmt, 2);
+        int member_count = sqlite3_column_int(stmt, 3);
+        const char *created_time = (const char *)sqlite3_column_text(stmt, 4);
+        
+        printf("%4u%20s\t%12s%8d\t%s\n",
+               room_no, room_name ? room_name : "", manager_id ? manager_id : "", member_count, created_time);
     }
+    
     sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
+}
+
+// 대화방 멤버 목록 가져오기 함수 - 특정 대화방의 멤버 정보를 데이터베이스에서 가져옴
+void db_get_room_members(Room *room) {
+    if (!room) {
+        fprintf(stderr, "Invalid room pointer\n");
+        return;
+    }
+
+    pthread_mutex_lock(&g_db_mutex);
+
+    const char *sql =
+        "SELECT user_id FROM room_user WHERE room_no = ?;";
+    
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
+    }
+
+    sqlite3_bind_int(stmt, 1, room->no);
+    
+    printf("Members in room '%s':\n", room->room_name);
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char *user_id = (const char *)sqlite3_column_text(stmt, 0);
+        printf("- %s\n", user_id ? user_id : "Unknown");
+    }
+    
+    sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
+}
+
+// ======== 메시지 관련 함수들 ========
+// 메시지 추가 함수 - 대화방에 메시지를 추가
+void db_insert_message(Room *room, User *user, const char *message) {
+
+}
+
+// 메시지 삭제 함수 - 대화방에서 특정 메시지를 삭제
+void db_remove_message(Room *room, User *user, const char *message) {
+
+}
+
+// 대화방 메시지 가져오기 함수 - 특정 대화방의 메시지를 데이터베이스에서 가져옴
+void db_get_room_message(Room *room, User *user) {
+
 }
