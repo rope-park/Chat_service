@@ -318,22 +318,35 @@ int db_get_user_by_sock(int sock) {
 // ======= 대화방 관련 함수 ========
 // 대화방 생성 함수 - 대화방 정보를 데이터베이스에 삽입
 void db_create_room(Room *room) {
+    if (!room || !room->room_name || !room->manager) {
+        fprintf(stderr, "Invalid room or manager info\n");
+        return;
+    }
+
+    pthread_mutex_lock(&g_db_mutex);
+
     const char *sql =
         "INSERT INTO room (room_no, room_name, manager_id, member_count) "
         "VALUES (?, ?, ?, 1);";
 
     sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
+    }
     sqlite3_bind_int(stmt, 1, room->no);
     sqlite3_bind_text(stmt, 2, room->room_name, -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 3, room->manager->id, -1, SQLITE_STATIC);
-    int rc = sqlite3_step(stmt);
+    rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
         fprintf(stderr, "SQL create room error: %s\n", sqlite3_errmsg(db));
     } else {
         fprintf(stderr, "Room '%s' created successfully\n", room->room_name);
     }
     sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
 }
 
 // 대화방 이름 변경 함수 - 대화방 이름 업데이트
