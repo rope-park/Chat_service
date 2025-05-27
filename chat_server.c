@@ -900,20 +900,12 @@ void cmd_id(User *user, char *args) {
         return;
     }
 
-    // ID 중복 체크
+    // DB에서 중복 체크
     pthread_mutex_lock(&g_users_mutex);
-    User *existing = find_client_by_id_unlocked(new_id);
+    User *cached_user = find_client_by_id_unlocked(new_id);
     pthread_mutex_unlock(&g_users_mutex);
 
-    if (existing && existing != user) {
-        char error_msg[BUFFER_SIZE];
-        snprintf(error_msg, sizeof(error_msg), "[Server] ID '%s' is already taken.\n", new_id);
-        safe_send(user->sock, error_msg);
-        return;
-    }
-
-    // DB에서 중복 체크
-    if (db_check_user_id(new_id)) {
+    if (cached_user || db_check_user_id(new_id)) {
         char error_msg[BUFFER_SIZE];
         snprintf(error_msg, sizeof(error_msg), "[Server] ID '%s' is already taken in the database.\n", new_id);
         safe_send(user->sock, error_msg);
@@ -924,7 +916,7 @@ void cmd_id(User *user, char *args) {
 
     // ID 변경
     printf("[INFO] User %s changed ID to %s\n", user->id, new_id);
-    strncpy(user->id, new_id, sizeof(user->id) -1);
+    snprintf(user->id, sizeof(user->id), "%s", new_id);
     user->id[sizeof(user->id) - 1] = '\0';
 
     char success_msg[BUFFER_SIZE];
