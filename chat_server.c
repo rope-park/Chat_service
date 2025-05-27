@@ -48,6 +48,7 @@ client_cmd_t cmd_tbl_client[] = {
     {"/create", cmd_create, usage_create, "Create a new chatroom"},
     {"/join", cmd_join_wrapper, usage_join, "Join a chatroom by number"},
     {"/leave", cmd_leave_wrapper, usage_leave, "Leave current chatroom"},
+    {"/delete_account", cmd_delete_account_wrapper, usage_help, "Delete your account"},
     {"/help", cmd_help_wrapper, usage_help, "Show all available commands"},
     {NULL, NULL, NULL, NULL},
 };
@@ -664,6 +665,11 @@ void *client_process(void *args) {
                 cmd_leave(user);
             }
 
+            // 계정 삭제
+            else if (strcmp(cmd, "delete_account") == 0) {
+                cmd_delete_account(user);
+            }
+
             // 도움말
             else if (strcmp(cmd, "help") == 0) {
                 cmd_help(user);
@@ -1057,6 +1063,12 @@ void cmd_kick(User *user, char *user_id) {
 
     // 대화방에서 사용자 제거
     room_remove_member(r, target_user);
+    destroy_room_if_empty(r); // 대화방이 비어있으면 제거
+    pthread_mutex_lock(&g_db_mutex);
+    db_remove_user_from_room(r, target_user); // 데이터베이스에서 사용자 제거
+    db_update_room_member_count(r); // 데이터베이스에서 대화방 참여자 수 업데이트
+    pthread_mutex_unlock(&g_db_mutex);
+    printf("[INFO] User %s has been kicked from room %s by user %s\n", target_user->id, r->room_name, user->id);
 
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] User '%s' has been kicked from room '%s'.\n", target_user->id, r->room_name);
@@ -1112,7 +1124,7 @@ void cmd_create(User *creator, char *room_name) {
     new_room->created_time = time(NULL);
     memset(new_room->members, 0, sizeof(new_room->members));
     new_room->manager = creator;
-    new_room->member_count = 0;
+    new_room->member_count = 1;
     new_room->next = NULL;
     new_room->prev = NULL;
 
@@ -1173,7 +1185,8 @@ void cmd_join(User *user, char *room_no_str) {
     safe_send(user->sock, success_msg);
     
     pthread_mutex_lock(&g_db_mutex);
-    db_get_room_messages(target_room, user); // 대화방 메시지 로드
+    db_get_room_message(target_room, user); // 대화방 메시지 로드
+    db_update_room_member_count(target_room); // 데이터베이스에 대화방 참여자 수 업데이트
     pthread_mutex_unlock(&g_db_mutex);
 
     broadcast_to_room(target_room, user, "[Server] %s joined the room.\n", user->id);
@@ -1201,6 +1214,11 @@ void cmd_leave(User *user) {
     broadcast_to_room(current_room, user, "[Server] %s left the room.\n", user->id);
     // 대화방에서 사용자 제거
     room_remove_member(current_room, user);
+    // 데이터베이스에 대화방 참여자 수 업데이트
+    pthread_mutex_lock(&g_db_mutex);
+    db_update_room_member_count(current_room);
+    pthread_mutex_unlock(&g_db_mutex);
+
     // 퇴장 메시지 전송
     printf("[INFO] User %s left room '%s' (ID: %u).\n", user->id, current_room->room_name, current_room->no);
     safe_send(user->sock, "[Server] You left the room.\n");
@@ -1212,6 +1230,43 @@ void cmd_leave(User *user) {
 void cmd_leave_wrapper(User *user, char *args) {
     (void)args;
     cmd_leave(user);
+}
+
+// 사용자 계정 삭제 함수
+void cmd_delete_account(User *user) {
+    // 사용자 대화방에서 나가기
+    if (user->room) {
+        cmd_leave(user);
+    }
+    // 사용자에게 계정 삭제 확인 메시지 전송
+    safe_send(user->sock, "[Server] Your account is being deleted. You will be disconnected.\n");
+
+    // 데이터베이스에서 사용자 정보 삭제
+    pthread_mutex_lock(&g_db_mutex);
+    db_remove_user(user); // 데이터베이스에서 사용자 정보 완전히 삭제
+    pthread_mutex_unlock(&g_db_mutex);
+
+    // 계정 삭제 완료 메시지 전송
+    safe_send(user->sock, "[Serv송r] Your account has been deleted.\n");
+
+    // 사용자 목록에서 제거
+    list_remove_client(user);
+
+    // 소켓 종료 및 메모리 해제
+    if (user->sock >= 0) {
+        shutdown(user->sock, SHUT_RDWR);
+        close(user->sock);
+    }
+    
+    printf("[INFO] User %s has deleted their account and disconnected.\n", user->id);
+    
+    free(user);
+}
+
+// typedef에서 warning: type allocation error 방지
+void cmd_delete_account_wrapper(User *user, char *args) {
+    (void)args; // 사용하지 않는 인자
+    cmd_delete_account(user);
 }
 
 // 도움말 출력 함수
