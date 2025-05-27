@@ -32,6 +32,7 @@ pthread_mutex_t g_db_mutex    = PTHREAD_MUTEX_INITIALIZER;
 server_cmd_t cmd_tbl_server[] = {
     {"users", server_user, "Show all users"},
     {"user_info", server_user_info_wrapper, "Show user info by ID"},
+    {"room_info", server_room_info_wrapper, "Show room info by room name"},
     {"recent_users", server_user, "Show recent users"},
     {"rooms", server_room, "Show all chatrooms"},
     {"quit", server_quit, "Quit server"},
@@ -89,6 +90,39 @@ void server_user_info_wrapper() {
     id[strcspn(id, "\r\n")] = '\0';
 
     server_user_info(NULL, id); // 사용자 정보 출력 함수 호출
+}
+
+// 대화방 정보 출력 함수 - 대화방 이름으로 검색
+void server_room_info(User *user, char *room_name) {
+    if (!room_name || strlen(room_name) == 0) {
+        printf("Usage: room_info <room_name>\n");
+        return;
+    }
+
+    pthread_mutex_lock(&g_rooms_mutex);
+    Room *r = find_room(room_name);
+    pthread_mutex_unlock(&g_rooms_mutex);
+
+    if (r) {
+        db_get_room_info(r); // 데이터베이스에서 대화방 정보 가져오기
+    } else {
+        printf("Room '%s' not found.\n", room_name);
+    }
+}
+
+// typedef에서 warning
+void server_room_info_wrapper() {
+    char room_name[32];
+    printf("Enter room name to get info: ");
+    fflush(stdout);
+    if (fgets(room_name, sizeof(room_name), stdin) == NULL) {
+        perror("fgets error");
+        return;
+    }
+    // 개행 문자 제거
+    room_name[strcspn(room_name, "\r\n")] = '\0';
+
+    server_room_info(NULL, room_name); // 대화방 정보 출력 함수 호출
 }
 
 // 생성된 대화방 정보 출력 함수
@@ -754,8 +788,11 @@ void process_server_cmd(int epfd, int server_sock) {
     else if (strcmp(cmd, "user_info") == 0) {
         server_user_info_wrapper();
     }
+    else if (strcmp(cmd, "room_info") == 0) {
+        server_room_info_wrapper();
+    }
     else if (strcmp(cmd, "help") == 0) {
-        printf("Available commands: users, rooms, user_iinfo, recent_users, quit\n");
+        printf("Available commands: users, rooms, user_info, room_info, recent_users, quit\n");
         fflush(stdout); // 버퍼 비우기
         return;
     }
