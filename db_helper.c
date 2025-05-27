@@ -442,21 +442,47 @@ void db_update_room_manager(Room *room, const char *new_manager_id) {
 
 // 대화방 멤버 수 업데이트 함수 - 대화방 참여자 수 업데이트
 void db_update_room_member_count(Room *room) {
+    if (!room) {
+        fprintf(stderr, "Invalid room pointer\n");
+        return;
+    }
+
+    pthread_mutex_lock(&g_db_mutex);
+
     const char *sql =
         "UPDATE room SET member_count = ? WHERE room_no = ?;";
-
     sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, room->member_count);
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
+    }
+
+    // 멤버 수가 음수인 경우 0으로 설정
+    int count = (room->member_count < 0) ? 0 : room->member_count;
+    sqlite3_bind_int(stmt, 1, count);
     sqlite3_bind_int(stmt, 2, room->no);
-    int rc = sqlite3_step(stmt);
+    
+    rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
         fprintf(stderr, "SQL update room member count error: %s\n", sqlite3_errmsg(db));
     } else {
-        fprintf(stderr, "Room member count updated successfully\n");
+        printf("[DB] Room '%s' (room_no=%u) member_count updated to %d\n", room->room_name, room->no, count);
     }
     sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
 }
+
+void db_update_room_member_count(Room *room);                        // 대화방 멤버 수 업데이트
+void db_add_user_to_room(Room *room, User *user);                    // 대화방에 사용자 추가
+void db_remove_user_from_room(Room *room, User *user);               // 대화방에서 사용자 제거
+void db_get_room_info(Room *room);                                   // 대화방 정보 가져오기
+void db_get_room_by_name(const char *room_name);                     // 대화방 이름으로 검색
+void db_get_room_by_no(unsigned int room_no);                        // 대화방 번호로 검색
+void db_get_all_rooms();                                             // 모든 대화방 목록 가져오기
+void db_get_room_members(Room *room);     
+
 
 // 메시지 추가 함수 - 대화방 메시지를 데이터베이스에 삽입
 void db_insert_message(Room *room, User *user, const char *message) {
