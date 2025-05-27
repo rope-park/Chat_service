@@ -568,6 +568,10 @@ void *client_process(void *args) {
             }
             strncpy(user->id, temp_id_buf, sizeof(user->id) - 1);
             user->id[sizeof(user->id) - 1] = '\0';
+            db_insert_user(user); // 데이터베이스에 사용자 정보 저장
+            db_update_user_connected(user, 1); // 데이터베이스에 연결 상태 업데이트
+            printf("[INFO] User %s (fd %d) assigned random ID.\n", user->id, user->sock);
+            safe_send(user->sock, "You have been assigned a random ID.\n");
             break;
         }
 
@@ -581,8 +585,7 @@ void *client_process(void *args) {
         pthread_mutex_lock(&g_users_mutex);
         User *existing_user = find_client_by_id_unlocked(buf);
         pthread_mutex_unlock(&g_users_mutex);
-        if (existing_user != NULL)
-        {
+        if (existing_user != NULL || db_check_user_id(buf)) {
             safe_send(user->sock, "ID already in use. Try again.\n");
             continue;
         }
@@ -591,6 +594,7 @@ void *client_process(void *args) {
         strncpy(user->id, buf, sizeof(user->id) - 1);
         user->id[sizeof(user->id) - 1] = '\0';
         db_insert_user(user); // 데이터베이스에 사용자 정보 저장
+        db_update_user_connected(user, 1); // 데이터베이스에 연결 상태 업데이트
         break;
     }
 
@@ -704,7 +708,10 @@ void *client_process(void *args) {
         shutdown(user->sock, SHUT_RDWR);
         close(user->sock);
     }
-    db_disconnect_user(user); // 데이터베이스 연결 해제
+    db_update_user_connected(user, 0); // 데이터베이스에 연결 상태 업데이트
+    printf("[INFO] User %s (fd %d) disconnected.\n", user->id, user->sock);
+
+
     free(user);
     pthread_exit(NULL);
 }
@@ -896,7 +903,7 @@ void cmd_id(User *user, char *args) {
     }
 
     db_update_user_id(user, new_id); // 데이터베이스에 ID 업데이트
-    
+
     // ID 변경
     printf("[INFO] User %s changed ID to %s\n", user->id, new_id);
     strncpy(user->id, new_id, sizeof(user->id) -1);
