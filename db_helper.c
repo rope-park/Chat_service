@@ -294,24 +294,24 @@ int db_check_user_id(const char *user_id) {
 }
 
 // 사용자 소켓 번호로 검색 함수 - 특정 소켓 번호를 가진 사용자를 데이터베이스에서 검색
-void db_get_user_by_sock(int sock) {
-    const char *sql =
-        "SELECT sock_no, user_id, connected, timestamp FROM user WHERE sock_no = ?;";
+int db_get_user_by_sock(int sock) {
+    pthread_mutex_lock(&g_db_mutex);
 
+    const char *sql =
+        "SELECT 1 FROM user WHERE sock_no = ?;";
     sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, sock);
-    int rc = sqlite3_step(stmt);
-    if (rc == SQLITE_ROW) {
-        int sock_no = sqlite3_column_int(stmt, 0);
-        const char *user_id = (const char *)sqlite3_column_text(stmt, 1);
-        int connected = sqlite3_column_int(stmt, 2);
-        const char *timestamp = (const char *)sqlite3_column_text(stmt, 3);
-        printf("Sock: %d, User ID: %s, Connected: %d, Timestamp: %s\n", sock_no, user_id, connected, timestamp);
-    } else {
-        fprintf(stderr, "SQL get user by sock error: %s\n", sqlite3_errmsg(db));
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return 0; // 오류 발생
     }
+    sqlite3_bind_int(stmt, 1, sock);
+    int exists = (sqlite3_step(stmt) == SQLITE_ROW) ? 1 : 0; // 존재 여부 반환
+    
     sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
+    return exists; // 존재 여부 반환
 }
 
 
