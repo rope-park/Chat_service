@@ -601,8 +601,86 @@ void db_get_room_info(Room *room){
     pthread_mutex_unlock(&g_db_mutex);
 }
 
-void db_get_room_by_name(const char *room_name);
-void db_get_room_by_no(unsigned int room_no);
+// 대화방 이름으로 검색 함수 - 특정 대화방 이름을 가진 대화방을 데이터베이스에서 검색
+void db_get_room_by_name(const char *room_name) {
+    if (!room_name || strlen(room_name) == 0) {
+        fprintf(stderr, "Invalid room_name\n");
+        return;
+    }
+
+    pthread_mutex_lock(&g_db_mutex);
+
+    const char *sql =
+        "SELECT room_no, room_name, manager_id, member_count, created_time "
+        "FROM room WHERE room_name = ?;";
+    
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
+    }
+
+    sqlite3_bind_text(stmt, 1, room_name, -1, SQLITE_STATIC);
+    
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        unsigned int room_no = sqlite3_column_int(stmt, 0);
+        const char *name = (const char *)sqlite3_column_text(stmt, 1);
+        const char *manager_id = (const char *)sqlite3_column_text(stmt, 2);
+        int member_count = sqlite3_column_int(stmt, 3);
+        const char *created_time = (const char *)sqlite3_column_text(stmt, 4);
+        
+        printf("[DB] Room Info: No=%u, Name='%s', Manager='%s', Members=%d, Created='%s'\n",
+               room_no, name ? name : "", manager_id ? manager_id : "", member_count, created_time);
+    } else {
+        fprintf(stderr, "SQL get room by name error: %s\n", sqlite3_errmsg(db));
+    }
+    
+    sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
+}
+
+// 대화방 번호로 검색 함수 - 특정 대화방 번호를 가진 대화방을 데이터베이스에서 검색
+void db_get_room_by_no(unsigned int room_no) {
+    if (room_no == 0) {
+        fprintf(stderr, "Invalid room_no\n");
+        return;
+    }
+
+    pthread_mutex_lock(&g_db_mutex);
+
+    const char *sql =
+        "SELECT room_no, room_name, manager_id, member_count, created_time "
+        "FROM room WHERE room_no = ?;";
+    
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
+    }
+
+    sqlite3_bind_int(stmt, 1, room_no);
+    
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char *name = (const char *)sqlite3_column_text(stmt, 1);
+        const char *manager_id = (const char *)sqlite3_column_text(stmt, 2);
+        int member_count = sqlite3_column_int(stmt, 3);
+        const char *created_time = (const char *)sqlite3_column_text(stmt, 4);
+        
+        printf("[DB] Room Info: No=%u, Name='%s', Manager='%s', Members=%d, Created='%s'\n",
+               room_no, name ? name : "", manager_id ? manager_id : "", member_count, created_time);
+    } else {
+        fprintf(stderr, "SQL get room by no error: %s\n", sqlite3_errmsg(db));
+    }
+    
+    sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
+}
+
+
 void db_get_all_rooms();
 void db_get_room_members(Room *room);
 
