@@ -45,6 +45,14 @@ void db_init() {
         "timestamp DATETIME DEFAULT (DATETIME('NOW', 'LOCALTIME')), "
         "FOREIGN KEY(room_no) REFERENCES room(room_no) ON DELETE CASCADE, "
         "FOREIGN KEY(sender_id) REFERENCES user(user_id));";
+    
+    const char *sql_room_user_tbl =
+        "CREATE TABLE IF NOT EXISTS room_user ("
+        "room_no INTEGER,"
+        "user_id TEXT, "
+        "PRIMARY KEY(room_no, user_id), "
+        "FOREIGN KEY(room_no) REFERENCES room(room_no) ON DELETE CASCADE, "
+        "FOREIGN KEY(user_id) REFERENCES user(user_id) ON DELETE CASCADE);";
 
     char *err_msg;
     rc = sqlite3_exec(db, sql_user_tbl, 0, 0, &err_msg);
@@ -69,6 +77,14 @@ void db_init() {
         sqlite3_free(err_msg);
     } else {
         fprintf(stderr, "Message table created successfully\n");
+    }
+
+    rc = sqlite3_exec(db, sql_room_user_tbl, 0, 0, &err_msg);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL room_user_tbl error: %s\n", err_msg);
+        sqlite3_free(err_msg);
+    } else {
+        fprintf(stderr, "Room_User table created successfully\n");
     }
 }
 
@@ -474,8 +490,41 @@ void db_update_room_member_count(Room *room) {
     pthread_mutex_unlock(&g_db_mutex);
 }
 
-void db_update_room_member_count(Room *room);                        // 대화방 멤버 수 업데이트
-void db_add_user_to_room(Room *room, User *user);                    // 대화방에 사용자 추가
+// 대화방에 사용자 추가 함수 - 대화방에 사용자를 추가
+void db_add_user_to_room(Room *room, User *user) {
+    if (!room || !user || !user->id) {
+        fprintf(stderr, "Invalid room or user info\n");
+        return;
+    }
+
+    pthread_mutex_lock(&g_db_mutex);
+
+    const char *sql =
+        "NSERT OR IGNORE INTO room_user (room_no, user_id) VALUES (?, ?);";
+    
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
+    }
+
+    sqlite3_bind_int(stmt, 1, room->no);
+    sqlite3_bind_text(stmt, 2, user->id, -1, SQLITE_STATIC);
+    
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        fprintf(stderr, "SQL add user to room error: %s\n", sqlite3_errmsg(db));
+    } else {
+        printf("[DB] User '%s' added to room '%s' successfully\n", user->id, room->room_name);
+        db_update_room_member_count(room); // 멤버 수 업데이트
+    }
+    
+    sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
+}
+
 void db_remove_user_from_room(Room *room, User *user);               // 대화방에서 사용자 제거
 void db_get_room_info(Room *room);                                   // 대화방 정보 가져오기
 void db_get_room_by_name(const char *room_name);                     // 대화방 이름으로 검색
