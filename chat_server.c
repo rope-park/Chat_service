@@ -58,22 +58,7 @@ client_cmd_t cmd_tbl_client[] = {
 // ==== CLI ====
 // 사용자 목록 정보 출력 함수
 void server_user(void) {
-    pthread_mutex_lock(&g_users_mutex);
-
-    printf("%2s\t%16s\t%20s\n", "sock_no", "ID", "ROOM");
-    printf("=========================================================\n");
-
-    // 사용자 목록을 순회하며 정보 출력
-    for (User *u = g_users; u != NULL; u = u->next) {
-        // 사용자가 참여 중인 방 이름, 없으면 "Lobby"로 표시
-        const char *r = (u->room ? u->room->room_name : "Lobby");
-        printf("%2d\t%16s\t%20s\n", 
-                u->sock,    // 소켓 번호
-                u->id,      // 사용자 ID
-                r   // 대화방 이름
-        );
-    }
-    pthread_mutex_unlock(&g_users_mutex);
+    db_get_all_users(); // 데이터베이스에서 모든 사용자 정보 가져오기
 }
 
 // 생성된 대화방 정보 출력 함수
