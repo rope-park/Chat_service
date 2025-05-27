@@ -439,6 +439,7 @@ void room_remove_member_unlocked(Room *room, User *user) {
 void destroy_room_if_empty_unlocked(Room *room) {
     if (room->member_count <= 0) {
         printf("[INFO] Room '%s' is empty, destroying.\n", room->room_name);
+        db_remove_room(room); // 데이터베이스에서 대화방 제거
         list_remove_room_unlocked(room);
         free(room);
     }
