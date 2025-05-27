@@ -152,6 +152,26 @@ void db_update_user_connected(User *user, int status) {
     sqlite3_finalize(stmt);
 }
 
+// 모든 사용자 목록 가져오기 함수 - 데이터베이스에서 모든 사용자 정보를 가져옴
+void db_get_all_users() {
+    const char *sql =
+        "SELECT sock_no, user_id, connected, timestamp FROM user;";
+
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    
+    // 사용자 목록을 순회하며 정보를 출력
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        int sock_no = sqlite3_column_int(stmt, 0);
+        const char *user_id = (const char *)sqlite3_column_text(stmt, 1);
+        int connected = sqlite3_column_int(stmt, 2);
+        const char *timestamp = (const char *)sqlite3_column_text(stmt, 3);
+        printf("Sock: %d, User ID: %s, Connected: %d, Timestamp: %s\n", sock_no, user_id, connected, timestamp);
+    }
+    sqlite3_finalize(stmt);
+}
+
+// ======= 대화방 관련 함수 ========
 // 대화방 생성 함수 - 대화방 정보를 데이터베이스에 삽입
 void db_create_room(Room *room) {
     const char *sql =
