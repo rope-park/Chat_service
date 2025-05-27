@@ -1098,7 +1098,6 @@ void cmd_kick(User *user, char *user_id) {
 
     // 대화방에서 사용자 제거
     room_remove_member(r, target_user);
-    db_update_room_member_count(r); // 데이터베이스에서 대화방 참여자 수 업데이트
     destroy_room_if_empty(r); // 대화방이 비어있으면 제거
     
     db_remove_user_from_room(r, target_user); // 데이터베이스에서 사용자 제거
@@ -1169,7 +1168,6 @@ void cmd_create(User *creator, char *room_name) {
     // 대화방에 사용자 추가
     room_add_member(new_room, creator);
     db_add_user_to_room(new_room, creator); // 데이터베이스에 사용자 추가
-    db_update_room_member_count(new_room); // 데이터베이스에 대화방 참여자 수 업데이트
     pthread_mutex_unlock(&g_rooms_mutex);
     printf("[INFO] User %s created room '%s' (ID: %u) and joined.\n", creator->id, new_room->room_name, new_room->no);
 
@@ -1216,7 +1214,6 @@ void cmd_join(User *user, char *room_no_str) {
 
     room_add_member(target_room, user);
     db_add_user_to_room(target_room, user); // 데이터베이스에 사용자 추가
-    db_update_room_member_count(target_room); // 데이터베이스에 대화방 참여자 수 업데이트
     
     printf("[INFO] User %s joined room '%s' (ID: %u).\n", user->id, target_room->room_name, target_room->no);
     
@@ -1252,7 +1249,6 @@ void cmd_leave(User *user) {
     // 대화방에서 사용자 제거
     
     db_remove_user_from_room(current_room, user); // 데이터베이스에서 사용자 제거
-    db_update_room_member_count(current_room); // 데이터베이스에 대화방 참여자 수 업데이트
     
     // 퇴장 메시지 전송
     printf("[INFO] User %s left room '%s' (ID: %u).\n", user->id, current_room->room_name, current_room->no);
