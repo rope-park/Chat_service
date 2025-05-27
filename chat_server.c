@@ -127,35 +127,7 @@ void server_room_info_wrapper() {
 
 // 생성된 대화방 정보 출력 함수
 void server_room(void) {
-    pthread_mutex_lock(&g_rooms_mutex);
-
-    printf("%4s%20s\t%12s%8s\t%s\n", "ROOM ID", "ROOM NAME", "CREATED TIME", "#USER", "MEMBER");
-    printf("==============================================================================================================\n");
-
-    // 대화방 목록을 순회하며 정보 출력
-    for (Room *r = g_rooms; r != NULL; r = r->next) {
-        // 대화방 생성 시간 포맷팅
-        char time_str[20];
-        struct tm *tm_info = localtime((time_t *)&r->created_time);
-        strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
-        // 대화방 정보 출력
-        printf("%4u%20s\t%12s%8d\t",
-                r->no,               // 방 번호
-                r->room_name,        // 방 이름
-                time_str,            // 방 생성 시간
-                r->member_count      // 방 참여자 수
-        );
-        for (int i = 0; i < r->member_count; i++) {
-            if (r->members[i]) {
-                printf("%s", r->members[i]->id);
-                if (i < r->member_count - 1) {
-                    printf(", ");
-                }
-            }
-        }
-        printf("\n");
-    }
-    pthread_mutex_unlock(&g_rooms_mutex);
+    db_get_all_rooms(); // 데이터베이스에서 모든 대화방 정보 가져오기
 }
 
 // 서버 종료 함수
@@ -860,6 +832,7 @@ void cmd_users(User *user) {
     }
     
     pthread_mutex_lock(&g_db_mutex);
+    //db_get_all_rooms(); // 데이터베이스에서 모든 대화방 정보 가져오기
     db_recent_user(10); // 최근 사용자 목록 업데이트
     pthread_mutex_unlock(&g_db_mutex);
     
@@ -880,6 +853,7 @@ void cmd_rooms(int sock) {
     strcat(room_list, "[Server] Available rooms: ");
 
     pthread_mutex_lock(&g_rooms_mutex);
+    // db_get_all_rooms(); // 데이터베이스에서 모든 대화방 정보 가져오기
     Room *room = g_rooms;
     if (room == NULL) {
         strcat(room_list, "No rooms available.\n");
@@ -1365,6 +1339,7 @@ void cmd_help_wrapper(User *user, char *args) {
     (void)args; // 사용하지 않는 인자
     cmd_help(user);
 }
+
 
 void usage_id(User *user) {
     char *msg = "Usage: /id <new_id(nickname)>\n";
