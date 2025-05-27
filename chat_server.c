@@ -1448,6 +1448,14 @@ int main() {
                         memset(user, 0, sizeof(*user));
                         user->sock = ns;
                         user->room = NULL;
+
+                        if (db_get_user_by_sock(user->sock)) {
+                            // 이미 DB에 같은 소켓 번호가 있으면 중복 처리
+                            safe_send(user->sock, "Socket already in use. Try again later.\n");
+                            close(user->sock);
+                            return;
+                        }
+
                         list_add_client(user);
                         
                         pthread_create(&user->thread, NULL, client_process, user);
