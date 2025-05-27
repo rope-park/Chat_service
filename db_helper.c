@@ -171,20 +171,32 @@ void db_update_user_id(User *user, const char *new_id) {
 
 // 사용자 연결 상태 업데이트 함수 - 사용자의 연결 상태 업데이트
 void db_update_user_connected(User *user, int status) {
+    if (!user || user->sock < 0) return;
+
+    pthread_mutex_lock(&g_db_mutex);
+
     const char *sql =
         "UPDATE user SET connected = ? WHERE sock_no = ?;";
 
     sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
+    }
+
     sqlite3_bind_int(stmt, 1, status);
     sqlite3_bind_int(stmt, 2, user->sock);
-    int rc = sqlite3_step(stmt);
+    
+    rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
         fprintf(stderr, "SQL update user connected error: %s\n", sqlite3_errmsg(db));
     } else {
-        fprintf(stderr, "User '%s' connected status updated to '%d' successfully\n", user->id, status);
+        fprintf(stderr, "[DB] User '%s' connected status updated to '%d' successfully\n", user->id, status);
     }
     sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
 }
 
 // 모든 사용자 목록 가져오기 함수 - 데이터베이스에서 모든 사용자 정보를 가져옴
