@@ -43,7 +43,7 @@ void db_init() {
         "sender_id TEXT, "
         "context TEXT, "
         "timestamp DATETIME DEFAULT (DATETIME('NOW', 'LOCALTIME')), "
-        "FOREIGN KEY(room_no) REFERENCES room(room_no), "
+        "FOREIGN KEY(room_no) REFERENCES room(room_no) ON DELETE CASCADE, "
         "FOREIGN KEY(sender_id) REFERENCES user(user_id));";
 
     char *err_msg;
@@ -349,6 +349,34 @@ void db_create_room(Room *room) {
     pthread_mutex_unlock(&g_db_mutex);
 }
 
+// 대화방 삭제 함수 - 대화방 정보를 데이터베이스에서 삭제
+void db_remove_room(Room *room) {
+    if (!room) {
+        fprintf(stderr, "Invalid room pointer\n");
+        return;
+    }
+
+    pthread_mutex_lock(&g_db_mutex);
+
+    const char *sql =
+        "DELETE FROM room WHERE room_no = ?;";
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
+    }
+    sqlite3_bind_int(stmt, 1, room->no);
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        fprintf(stderr, "SQL remove room error: %s\n", sqlite3_errmsg(db));
+    } else {
+        printf("[DB] Room '%s' (no=%u) removed from DB.\n", room->room_name, room->no);
+    }
+    sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
+}
 // 대화방 이름 변경 함수 - 대화방 이름 업데이트
 void db_update_room_name(Room *room, const char *new_name) {
     const char *sql =
