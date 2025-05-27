@@ -782,12 +782,72 @@ void db_get_room_members(Room *room) {
 // ======== 메시지 관련 함수들 ========
 // 메시지 추가 함수 - 대화방에 메시지를 추가
 void db_insert_message(Room *room, User *user, const char *message) {
+    if (!room || !user || !message || strlen(message) == 0) {
+        fprintf(stderr, "Invalid room, user or message\n");
+        return;
+    }
 
+    pthread_mutex_lock(&g_db_mutex);
+
+    const char *sql =
+        "INSERT INTO message (room_no, sender_id, context) VALUES (?, ?, ?);";
+    
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
+    }
+
+    sqlite3_bind_int(stmt, 1, room->no);
+    sqlite3_bind_text(stmt, 2, user->id, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 3, message, -1, SQLITE_STATIC);
+
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        fprintf(stderr, "SQL insert message error: %s\n", sqlite3_errmsg(db));
+    } else {
+        printf("[DB] Message from '%s' in room '%s' added successfully\n", user->id, room->room_name);
+    }
+
+    sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
 }
 
 // 메시지 삭제 함수 - 대화방에서 특정 메시지를 삭제
 void db_remove_message(Room *room, User *user, const char *message) {
+    if (!room || !user || !message || strlen(message) == 0) {
+        fprintf(stderr, "Invalid room, user or message\n");
+        return;
+    }
 
+    pthread_mutex_lock(&g_db_mutex);
+
+    const char *sql =
+        "DELETE FROM message WHERE room_no = ? AND sender_id = ? AND context = ?;";
+    
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return;
+    }
+
+    sqlite3_bind_int(stmt, 1, room->no);
+    sqlite3_bind_text(stmt, 2, user->id, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 3, message, -1, SQLITE_STATIC);
+
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        fprintf(stderr, "SQL remove message error: %s\n", sqlite3_errmsg(db));
+    } else {
+        printf("[DB] Message from '%s' in room '%s' removed successfully\n", user->id, room->room_name);
+    }
+
+    sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
 }
 
 // 대화방 메시지 가져오기 함수 - 특정 대화방의 메시지를 데이터베이스에서 가져옴
