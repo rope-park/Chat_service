@@ -1021,13 +1021,23 @@ void cmd_change(User *user, char *room_name) {
 
     // 대화방 이름 변경
     pthread_mutex_lock(&g_rooms_mutex);
+    // 기존 방 이름 중복 체크
+    Room *existing_room_check = find_room_unlocked(room_name);
+    if (existing_room_check != NULL && existing_room_check != r) {
+        pthread_mutex_unlock(&g_rooms_mutex);
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "[Server] Room name '%s' already exists.\n", room_name);
+        safe_send(user->sock, error_msg);
+        return;
+    }
+    
+    // 메모리에서 방 이름 변경
     strncpy(r->room_name, room_name, sizeof(r->room_name) - 1);
     r->room_name[sizeof(r->room_name) - 1] = '\0';
     pthread_mutex_unlock(&g_rooms_mutex);
 
-    pthread_mutex_lock(&g_db_mutex);
     db_update_room_name(r, r->room_name); // 데이터베이스에 방 이름 업데이트
-    pthread_mutex_unlock(&g_db_mutex);
+    
     printf("[INFO] Room name changed to '%s' by user %s\n", r->room_name, user->id);
 
     char success_msg[BUFFER_SIZE];
