@@ -50,7 +50,8 @@ client_cmd_t cmd_tbl_client[] = {
     {"/create", cmd_create, usage_create, "Create a new chatroom"},
     {"/join", cmd_join_wrapper, usage_join, "Join a chatroom by number"},
     {"/leave", cmd_leave_wrapper, usage_leave, "Leave current chatroom"},
-    {"/delete_account", cmd_delete_account_wrapper, usage_help, "Delete your account"},
+    {"/delete_account", cmd_delete_account_wrapper, usage_delete_account, "Delete your account"},
+    {"/delete_message", cmd_delete_message, usage_delete_message, "Delete a message from the chatroom"},
     {"/help", cmd_help_wrapper, usage_help, "Show all available commands"},
     {NULL, NULL, NULL, NULL},
 };
@@ -708,9 +709,7 @@ void *client_process(void *args) {
         } else {
             // 일반 채팅: 방에 있으면 해당 방, 아니면 로비 브로드캐스트
             if (user->room) {
-                pthread_mutex_lock(&g_db_mutex);
                 db_insert_message(user->room, user, buf); // 데이터베이스에 메시지 저장
-                pthread_mutex_unlock(&g_db_mutex);
 
                 broadcast_to_room(user->room, user, "[%s] %s\n", user->id, buf);
             } else {
@@ -1311,6 +1310,59 @@ void cmd_delete_account_wrapper(User *user, char *args) {
     cmd_delete_account(user);
 }
 
+// 메시지 삭제 함수 (방장, 본인만 삭제 가능)
+void cmd_delete_message(User *user, char *args) {
+    if (!user || !args) {
+        safe_send(user->sock, "[Server] Usage: /delete_message <message_id>\n");
+        return;
+    }
+    int msg_id = atoi(args);
+    if (msg_id <= 0) {
+        safe_send(user->sock, "[Server] Invalid message ID.\n");
+        return;
+    }
+
+    // 메시지 정보 조회 (sender_id, room_no)
+    char sender_id[32] = {0};
+    unsigned int room_no = 0;
+    pthread_mutex_lock(&g_db_mutex);
+    const char *sql = "SELECT sender_id, room_no FROM message WHERE id = ?;";
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc == SQLITE_OK) {
+        sqlite3_bind_int(stmt, 1, msg_id);
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            strncpy(sender_id, (const char *)sqlite3_column_text(stmt, 0), sizeof(sender_id) - 1);
+            room_no = sqlite3_column_int(stmt, 1);
+        }
+    }
+    sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
+
+    if (room_no == 0) {
+        safe_send(user->sock, "[Server] Message not found.\n");
+        return;
+    }
+
+    Room *room = find_room_by_id(room_no);
+    if (!room) {
+        safe_send(user->sock, "[Server] Room not found.\n");
+        return;
+    }
+
+    // 권한 체크: 방장 또는 본인만 삭제 가능
+    if (strcmp(user->id, sender_id) != 0 && user != room->manager) {
+        safe_send(user->sock, "[Server] Only the sender or the room manager can delete this message.\n");
+        return;
+    }
+
+    if (db_remove_message_by_id(msg_id)) {
+        safe_send(user->sock, "[Server] Message deleted successfully.\n");
+    } else {
+        safe_send(user->sock, "[Server] Failed to delete message.\n");
+    }
+}
+
 // 도움말 출력 함수
 void cmd_help(User *user) {
     char buf[BUFFER_SIZE];
@@ -1373,6 +1425,16 @@ void usage_join(User *user) {
 
 void usage_leave(User *user) {
     char *msg = "Usage: /leave\n";
+    safe_send(user->sock, msg);
+}
+
+void usage_delete_account(User *user) {
+    char *msg = "Usage: /delete_account\n";
+    safe_send(user->sock, msg);
+}
+
+void usage_delete_message(User *user) {
+    char *msg = "Usage: /delete_message <message_id>\n";
     safe_send(user->sock, msg);
 }
 
