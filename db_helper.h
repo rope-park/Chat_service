@@ -18,7 +18,7 @@ void db_update_user_connected(User *user, int status);      // 사용자 연결 
 void db_get_all_users();                                    // 모든 사용자 목록 가져오기
 void db_get_user_info(const char *user_id);                 // 사용자 정보 가져오기
 int db_check_user_id(const char *user_id);                  // 사용자 ID로 검색
-int db_get_user_by_sock(int sock);                          // 소켓 번호로 사용자 검색
+int db_is_sock_connected(int sock);                         // 소켓 번호와 연결 상태로 사용자 검색
 void db_recent_user(int limit);                             // 최근 접속 사용자 목록
 
 // 대화방 관련 함수

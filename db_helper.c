@@ -310,22 +310,31 @@ int db_check_user_id(const char *user_id) {
     return exists;
 }
 
-// 사용자 소켓 번호로 검색 함수 - 특정 소켓 번호를 가진 사용자를 데이터베이스에서 검색
-int db_get_user_by_sock(int sock) {
+// 사용자 소켓 번호와 연결 상태로 사용자 검색 함수 - 특정 소켓 번호와 연결 상태를 가진 사용자가 데이터베이스에 존재하는지 확인
+int db_is_sock_connected(int sock) {
     pthread_mutex_lock(&g_db_mutex);
 
     const char *sql =
-        "SELECT 1 FROM user WHERE sock_no = ?;";
+        "SELECT 1 FROM user WHERE sock_no = ? AND connected = 1;";
     sqlite3_stmt *stmt;
     int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    int exists = 0; // 초기값 설정
     if (rc != SQLITE_OK) {
         fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
         pthread_mutex_unlock(&g_db_mutex);
         return 0; // 오류 발생
     }
-    sqlite3_bind_int(stmt, 1, sock);
-    int exists = (sqlite3_step(stmt) == SQLITE_ROW) ? 1 : 0; // 존재 여부 반환
-    
+    if (rc == SQLITE_OK) {
+        sqlite3_bind_int(stmt, 1, sock);
+        exists = (sqlite3_step(stmt) == SQLITE_ROW) ? 1 : 0; // 존재 여부 반환
+    }
+
+    if (exists != SQLITE_DONE && exists != SQLITE_ROW) {
+        fprintf(stderr, "SQL check sock connected error: %s\n", sqlite3_errmsg(db));
+    } else {
+        printf("[DB] Socket %d connected status exists: %d\n", sock, exists == SQLITE_ROW);
+    }
+
     sqlite3_finalize(stmt);
     pthread_mutex_unlock(&g_db_mutex);
     return exists; // 존재 여부 반환

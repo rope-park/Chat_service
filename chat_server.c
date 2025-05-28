@@ -736,8 +736,6 @@ void *client_process(void *args) {
     }
     db_update_user_connected(user, 0); // 데이터베이스에 연결 상태 업데이트
     printf("[INFO] User %s (fd %d) disconnected.\n", user->id, user->sock);
-
-
     free(user);
     pthread_exit(NULL);
 }
@@ -1534,8 +1532,9 @@ int main() {
                         user->sock = ns;
                         user->room = NULL;
 
-                        if (db_get_user_by_sock(user->sock)) {
-                            // 이미 DB에 같은 소켓 번호가 있으면 중복 처리
+                        if (db_is_sock_connected(user->sock)) {
+                            // DB에 같은 소켓 번호가 연결되어 있으면 중복으로 간주
+                            // DB에 같은 소켓 정보가 없거나 연결이 끊어진 경우에만 새로 할당
                             safe_send(user->sock, "Socket already in use. Try again later.\n");
                             close(user->sock);
                             free(user);
