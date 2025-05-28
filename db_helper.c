@@ -851,6 +851,45 @@ void db_remove_message(Room *room, User *user, const char *message) {
     pthread_mutex_unlock(&g_db_mutex);
 }
 
+// 메시지 삭제 함수 - 대화방에서 특정 메시지를 ID로 삭제
+int db_remove_message_by_id(Room *room, User *user, int message_id) {
+    if (!room || !user || message_id <= 0) {
+        fprintf(stderr, "Invalid room, user or message ID\n");
+        return 0;
+    }
+
+    pthread_mutex_lock(&g_db_mutex);
+
+    const char *sql =
+        "DELETE FROM message WHERE room_no = ? AND sender_id = ? AND id = ?;";
+    
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+        pthread_mutex_unlock(&g_db_mutex);
+        return 0; // 오류 발생
+    }
+
+    sqlite3_bind_int(stmt, 1, room->no);
+    sqlite3_bind_text(stmt, 2, user->id, -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 3, message_id);
+
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        fprintf(stderr, "SQL remove message by ID error (ID: %d): %s\n", message_id, sqlite3_errmsg(db));
+        sqlite3_finalize(stmt);
+        pthread_mutex_unlock(&g_db_mutex);
+        return 0; // 실패 시 0 반환
+    } else {
+        printf("[DB] Successfully removed message with ID '%d' from user '%s' in room '%s'\n", message_id, user->id, room->room_name);
+    }
+
+    sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
+    return 1; // 성공 시 1 반환
+}
+
 // 대화방 메시지 가져오기 함수 - 특정 대화방의 메시지를 데이터베이스에서 가져옴
 void db_get_room_message(Room *room, User *user) {
     if (!room || !user) {

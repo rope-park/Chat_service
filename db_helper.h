@@ -38,6 +38,7 @@ void db_get_room_members(Room *room);                                // 대화�
 // 메시지 관련 함수
 void db_insert_message(Room *room, User *user, const char *message); // 메시지 추가
 void db_remove_message(Room *room, User *user, const char *message); // 메시지 삭제
+int db_remove_message_by_id(Room *room, User *user, int message_id);// 메시지 ID로 삭제
 void db_get_room_message(Room *room, User *user);                    // 대화방 메시지 가져오기
 
 #endif // DB_HELPER_H
