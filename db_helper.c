@@ -21,8 +21,8 @@ void db_init() {
     const char *sql_user_tbl =
         "CREATE TABLE IF NOT EXISTS user ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "sock_no INTEGER UNIQUE, "
-        "user_id TEXT NOT NULL, "
+        "sock_no INTEGER NOT NULL, "
+        "user_id TEXT UNIQUE NOT NULL, "
         "connected INTEGER, "
         "timestamp DATETIME DEFAULT (DATETIME('NOW', 'LOCALTIME')));";
     
@@ -44,12 +44,13 @@ void db_init() {
         "context TEXT, "
         "timestamp DATETIME DEFAULT (DATETIME('NOW', 'LOCALTIME')), "
         "FOREIGN KEY(room_no) REFERENCES room(room_no) ON DELETE CASCADE, "
-        "FOREIGN KEY(sender_id) REFERENCES user(user_id));";
+        "FOREIGN KEY(sender_id) REFERENCES user(user_id) ON UPDATE CASCADE);";
     
     const char *sql_room_user_tbl =
         "CREATE TABLE IF NOT EXISTS room_user ("
         "room_no INTEGER,"
         "user_id TEXT, "
+        "join_time DATETIME DEFAULT (DATETIME('NOW', 'LOCALTIME')), "
         "PRIMARY KEY(room_no, user_id), "
         "FOREIGN KEY(room_no) REFERENCES room(room_no) ON DELETE CASCADE, "
         "FOREIGN KEY(user_id) REFERENCES user(user_id) ON DELETE CASCADE);";
@@ -99,7 +100,7 @@ void db_close() {
 // ======== 사용자 관련 함수 ========
 // 사용자 추가 함수 - 사용자 정보를 데이터베이스에 삽입
 void db_insert_user(User *user) {
-    if (!user || !user->id) return;
+    if (!user || user->id[0] == '\0') return;
 
     pthread_mutex_lock(&g_db_mutex);
 
@@ -129,7 +130,7 @@ void db_insert_user(User *user) {
 
 // 사용자 삭제 함수 - 사용자 정보를 데이터베이스에서 삭제
 void db_remove_user(User *user) {
-    if (!user || !user->id) return;
+    if (!user || user->id[0] == '\0') return;
 
     pthread_mutex_lock(&g_db_mutex);
 
@@ -157,7 +158,7 @@ void db_remove_user(User *user) {
 
 // 사용자 ID 변경 함수 - 사용자 ID 업데이트
 void db_update_user_id(User *user, const char *new_id) {
-    if (!user || !user->id) return;
+    if (!user || user->id[0] == '\0') return;
 
     pthread_mutex_lock(&g_db_mutex);
 
@@ -267,7 +268,7 @@ void db_get_user_info(const char *user_id) {
     rc = sqlite3_step(stmt);
     if (rc == SQLITE_ROW) {
         int sock_no = sqlite3_column_int(stmt, 0);
-        const char *id = (const char *)sqlite3_column_text(stmt, 1);
+        const char *user_id = (const char *)sqlite3_column_text(stmt, 1);
         int connected = sqlite3_column_int(stmt, 2);
         const char *timestamp = (const char *)sqlite3_column_text(stmt, 3);
         printf("Sock: %d, User ID: %s, Connected: %d, Timestamp: %s\n", sock_no, user_id, connected, timestamp);
@@ -366,7 +367,7 @@ void db_recent_user(int limit) {
 // ======= 대화방 관련 함수 ========
 // 대화방 생성 함수 - 대화방 정보를 데이터베이스에 삽입
 void db_create_room(Room *room) {
-    if (!room || !room->room_name || !room->manager) {
+    if (!room || !room->room_name[0] == '\0' || !room->manager) {
         fprintf(stderr, "Invalid room or manager info\n");
         return;
     }
@@ -524,7 +525,7 @@ void db_update_room_member_count(Room *room) {
 
 // 대화방에 사용자 추가 함수 - 대화방에 사용자를 추가
 void db_add_user_to_room(Room *room, User *user) {
-    if (!room || !user || !user->id) {
+    if (!room || !user || !user->id[0] == '\0') {
         fprintf(stderr, "Invalid room or user info\n");
         return;
     }
@@ -532,7 +533,7 @@ void db_add_user_to_room(Room *room, User *user) {
     pthread_mutex_lock(&g_db_mutex);
 
     const char *sql =
-        "NSERT OR IGNORE INTO room_user (room_no, user_id) VALUES (?, ?);";
+        "INSERT OR IGNORE INTO room_user (room_no, user_id, join_time) VALUES (?, ?, DATETIME('NOW', 'LOCALTIME'));";
     
     sqlite3_stmt *stmt;
     int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
@@ -559,7 +560,7 @@ void db_add_user_to_room(Room *room, User *user) {
 
 // 대화방에서 사용자 제거 함수 - 대화방에서 사용자를 제거
 void db_remove_user_from_room(Room *room, User *user) {
-    if (!room || !user || !user->id) {
+    if (!room || !user || !user->id[0] == '\0') {
         fprintf(stderr, "Invalid room or user info\n");
         return;
     }
