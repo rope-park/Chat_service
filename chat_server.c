@@ -65,7 +65,7 @@ void server_user(void) {
 }
 
 // 특정 사용자 정보 출력 함수 - 사용자 ID로 검색
-void server_user_info(User *user, char *id) {
+void server_user_info(char *id) {
     if (!id || strlen(id) == 0) {
         printf("Usage: user_info <user_id>\n");
         return;
@@ -90,11 +90,11 @@ void server_user_info_wrapper() {
     // 개행 문자 제거
     id[strcspn(id, "\r\n")] = '\0';
 
-    server_user_info(NULL, id); // 사용자 정보 출력 함수 호출
+    server_user_info(id); // 사용자 정보 출력 함수 호출
 }
 
 // 대화방 정보 출력 함수 - 대화방 이름으로 검색
-void server_room_info(User *user, char *room_name) {
+void server_room_info(char *room_name) {
     if (!room_name || strlen(room_name) == 0) {
         printf("Usage: room_info <room_name>\n");
         return;
@@ -123,7 +123,7 @@ void server_room_info_wrapper() {
     // 개행 문자 제거
     room_name[strcspn(room_name, "\r\n")] = '\0';
 
-    server_room_info(NULL, room_name); // 대화방 정보 출력 함수 호출
+    server_room_info(room_name); // 대화방 정보 출력 함수 호출
 }
 
 // 생성된 대화방 정보 출력 함수
@@ -743,7 +743,7 @@ void *client_process(void *args) {
 }
 
 // 서버 명령어 처리 함수
-void process_server_cmd(int epfd, int server_sock) {
+void process_server_cmd(void) {
     char cmd_buf[BUFFER_SIZE] = {0};
 
     // 개행 문자 제거
@@ -877,7 +877,7 @@ void cmd_rooms(int sock) {
             }
 
             if (room->next != NULL) {
-                remaining_len = BUFFER_SIZE - strlen(room_list) - 1;
+                size_t remaining_len = BUFFER_SIZE - strlen(room_list) - 1;
                 if (remaining_len > strlen(", ")) {
                     strcat(room_list, ", ");
                 } else {
@@ -1361,7 +1361,8 @@ void cmd_delete_message(User *user, char *args) {
         return;
     }
 
-    if (db_remove_message()) {
+    int delete_result = db_remove_message_by_id(room, user, msg_id);
+    if (delete_result) {
         safe_send(user->sock, "[Server] Message deleted successfully.\n");
     } else {
         safe_send(user->sock, "[Server] Failed to delete message.\n");
@@ -1549,7 +1550,7 @@ int main() {
                 // stdin 입력 처리 (CLI 명령)
                 } else if (events[i].data.fd == 0) {
                     // cmd 처리
-                    process_server_cmd(g_epfd, g_server_sock);
+                    process_server_cmd();
                 }
                 printf("> ");
                 fflush(stdout);
