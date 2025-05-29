@@ -1153,14 +1153,20 @@ void cmd_kick(User *user, char *user_id) {
 
 // 새 대화방 생성 및 참가 함수
 void cmd_create(User *creator, char *room_name) {
-    // 대화방 이름 유효성 검사
+    printf("[DEBUG] cmd_create called: room_name='%s'\n", room_name ? room_name : "(null)");
+    fflush(stdout);
+
     if (!room_name || strlen(room_name) == 0) {
+        printf("[DEBUG] usage_create called\n");
+        fflush(stdout);
         usage_create(creator);
         return;
     }
     
     // 대화방 이름 길이 제한
     if (strlen(room_name) >= sizeof(((Room *)0)->room_name)) {
+        printf("[DEBUG] room name too long\n");
+        fflush(stdout);
         char error_msg[BUFFER_SIZE];
         snprintf(error_msg, sizeof(error_msg), "[Server] Room name too long (max %zu characters).\n", sizeof(((Room*)0)->room_name) - 1);
         safe_send(creator->sock, error_msg);
@@ -1189,6 +1195,7 @@ void cmd_create(User *creator, char *room_name) {
     // 대화방 구조체 메모리 할당
     Room *new_room = (Room *)malloc(sizeof(Room));
     if (!new_room) {
+        pthread_mutex_unlock(&g_rooms_mutex);
         perror("malloc for new room failed");
         safe_send(creator->sock, "[Server] Failed to create room.\n");
         return;
@@ -1207,15 +1214,18 @@ void cmd_create(User *creator, char *room_name) {
     // 대화방 리스트에 추가
     list_add_room_unlocked(new_room);
     // 대화방에 사용자 추가
-    room_add_member(new_room, creator);
+    room_add_member_unlocked(new_room, creator);
     db_add_user_to_room(new_room, creator); // 데이터베이스에 사용자 추가
     pthread_mutex_unlock(&g_rooms_mutex);
+
     printf("[INFO] User %s created room '%s' (ID: %u) and joined.\n", creator->id, new_room->room_name, new_room->no);
 
     db_create_room(new_room); // 데이터베이스에 대화방 정보 저장
 
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] Room '%s' (ID: %u) created and joined.\n", new_room->room_name, new_room->no);
+    printf("[DEBUG] cmd_create: about to safe_send success\n");
+    fflush(stdout); // 버퍼 비우기
     safe_send(creator->sock, success_msg);
 }
 
