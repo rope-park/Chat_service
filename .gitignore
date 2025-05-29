@@ -54,3 +54,5 @@ package-lock.json
 yarn.lock
 chat_server
 chat_client_gtk
+chat.db-wal
+chat.db-shm
