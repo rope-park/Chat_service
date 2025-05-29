@@ -1207,6 +1207,7 @@ void cmd_create(User *creator, char *room_name) {
     new_room->created_time = time(NULL);
     memset(new_room->members, 0, sizeof(new_room->members));
     new_room->manager = creator;
+    printf("[DEBUG] cmd_create: new_room->manager: %p, id=%s\n", (void*)new_room->manager ? new_room->manager->id: "(null)", new_room->manager ? new_room->manager->id : "(null)");
     new_room->member_count = 1;
     new_room->next = NULL;
     new_room->prev = NULL;
@@ -1215,12 +1216,11 @@ void cmd_create(User *creator, char *room_name) {
     list_add_room_unlocked(new_room);
     // 대화방에 사용자 추가
     room_add_member_unlocked(new_room, creator);
+    db_create_room(new_room); // 데이터베이스에 대화방 정보 저장
     db_add_user_to_room(new_room, creator); // 데이터베이스에 사용자 추가
     pthread_mutex_unlock(&g_rooms_mutex);
 
     printf("[INFO] User %s created room '%s' (ID: %u) and joined.\n", creator->id, new_room->room_name, new_room->no);
-
-    db_create_room(new_room); // 데이터베이스에 대화방 정보 저장
 
     char success_msg[BUFFER_SIZE];
     snprintf(success_msg, sizeof(success_msg), "[Server] Room '%s' (ID: %u) created and joined.\n", new_room->room_name, new_room->no);
