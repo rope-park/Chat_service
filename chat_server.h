@@ -38,10 +38,10 @@ typedef struct Room {
 } Room;
 
 // ================== 전역 변수 ===================
-extern User *g_users; // 사용자 목록
-extern Room *g_rooms; // 대화방 목록
-extern int g_server_sock; // 서버 소켓
-extern int g_epfd; // epoll 디스크립터
+extern User *g_users;               // 사용자 목록
+extern Room *g_rooms;               // 대화방 목록
+extern int g_server_sock;           // 서버 소켓
+extern int g_epfd;                  // epoll 디스크립터
 extern unsigned int g_next_room_no; // 다음 대화방 고유 번호
 
 // Mutex 사용하여 스레드 상호 배제를 통해 안전하게 처리
@@ -54,9 +54,9 @@ extern pthread_mutex_t g_db_mutex;
 // ======== 서버부 ========
 // ==== CLI ====
 void server_user(void);                             // users 명령: 사용자 목록
-void server_user_info(char *id);        // user_info 명령: 사용자 정보 출력
+void server_user_info(char *id);                    // user_info 명령: 사용자 정보 출력
 void server_user_info_wrapper(void);                // user_info 명령 래퍼
-void server_room_info(char *room_name); // room_info 명령: 대화방 정보 출력
+void server_room_info(char *room_name);             // room_info 명령: 대화방 정보 출력
 void server_room_info_wrapper(void);                // room_info 명령 래퍼
 void server_room(void);                             // rooms 명령: 대화방 목록
 void server_quit(void);                             // quit 명령: 서버 종료

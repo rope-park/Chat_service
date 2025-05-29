@@ -632,6 +632,14 @@ void *client_process(void *args) {
         printf("[INFO] New user connected: %s (fd %d)\n", user->id, user->sock);
     }
 
+    if (!user || user->sock < 0) {
+        // 사용자 ID 설정 실패 시 연결 종료
+        safe_send(user->sock, "[Server] Failed to set user ID. Disconnecting.\n");
+        close(user->sock);
+        free(user);
+        pthread_exit(NULL);
+    }
+
     // 명령어/채팅 메인 루프
     while ((bytes_received = recv(user->sock, buf, sizeof(buf) - 1, 0)) > 0) {
         buf[bytes_received] = '\0';
@@ -743,12 +751,23 @@ void *client_process(void *args) {
 // 서버 명령어 처리 함수
 void process_server_cmd(void) {
     char cmd_buf[BUFFER_SIZE] = {0};
+    if (!fgets(cmd_buf, sizeof(cmd_buf), stdin)) {
+        printf("Error reading command: %s\n", strerror(errno));
+        fflush(stdout); // 버퍼 비우기
+        return;
+    }
 
     // 개행 문자 제거
     cmd_buf[strcspn(cmd_buf, "\r\n")] = '\0';
 
     char *cmd = strtok(cmd_buf, " "); // 첫 번째 토큰을 명령어로 사용
     char *arg = strtok(NULL, ""); // 나머지 토큰을 인자로 사용
+
+    if (!cmd || strlen(cmd) == 0) {
+        printf("No command entered. Type 'help' for available commands.\n");
+        fflush(stdout); // 버퍼 비우기
+        return;
+    }
 
     if (strcmp(cmd, "users") == 0) {
         server_user();
@@ -1533,12 +1552,9 @@ int main() {
                         user->room = NULL;
 
                         if (db_is_sock_connected(user->sock)) {
-                            // DB에 같은 소켓 번호가 연결되어 있으면 중복으로 간주
-                            // DB에 같은 소켓 정보가 없거나 연결이 끊어진 경우에만 새로 할당
-                            safe_send(user->sock, "Socket already in use. Try again later.\n");
-                            close(user->sock);
-                            free(user);
-                            continue;
+                            // DB에 같은 소켓 번호가 연결되어 있으면 강제로 연결 해제 처리
+                            db_update_user_connected(user, 0); // 이전 연결을 끊었다고 표시
+                            // 이제 새로 할당 가능 (continue하지 않고 아래로 진행)
                         }
 
                         list_add_client(user);
