@@ -182,7 +182,12 @@ void server_quit(void) {
 // ==== 메시지 전송 ====
 // 안전한 메시지 전송 함수 - 소켓 번호와 메시지 포인터를 인자로 받음
 ssize_t safe_send(int sock, const char *msg) {
+    printf("[DEBUG] safe_send: sock=%d, msg=%s\n", sock, msg ? msg : "(null)");
+    fflush(stdout);
+
     if (sock < 0 || msg == NULL) {
+        printf("[DEBUG] safe_send: Invalid sock or msg\n");
+        fflush(stdout);
         errno = EINVAL;
         return -1;
     }
@@ -202,6 +207,8 @@ ssize_t safe_send(int sock, const char *msg) {
         total_sent += sent;
         bytes_left -= sent;
     }
+    printf("[DEBUG] safe_send: %s\n", msg);
+    fflush(stdout);
     return total_sent;
 }
 
@@ -652,11 +659,16 @@ void *client_process(void *args) {
             
             if (!cmd) {
                 safe_send(user->sock, "[Server] Invalid command. Type /help\n");
+                printf("[DEBUG] cmd is NULL\n");
                 continue;
             }
+
+            if (!args) args = ""; // 인자가 없는 경우 빈 문자열로 초기화
+            printf("[DEBUG] cmd: %s, args: %s\n", cmd, args);
+            fflush(stdout);
             
             // ID 변경
-            else if (strcmp(cmd, "id") == 0) {
+            if (strcmp(cmd, "id") == 0) {
                 cmd_id(user, args);
             }
 
@@ -762,7 +774,7 @@ void process_server_cmd(void) {
 
     char *cmd = strtok(cmd_buf, " "); // 첫 번째 토큰을 명령어로 사용
     char *arg = strtok(NULL, ""); // 나머지 토큰을 인자로 사용
-
+    
     if (!cmd || strlen(cmd) == 0) {
         printf("No command entered. Type 'help' for available commands.\n");
         fflush(stdout); // 버퍼 비우기
@@ -816,49 +828,46 @@ void process_server_cmd(void) {
 // ==== CLI ====
 // 사용자 목록 정보 출력 함수
 void cmd_users(User *user) {
+    printf("[DEBUG] cmd_users called by %s, sock=%d\n", user->id, user->sock);
+    fflush(stdout); // 버퍼 비우기
+
     char user_list[BUFFER_SIZE];
+    size_t len = 0;
     user_list[0] = '\0';
 
-    // 대화방에 참여 중인 경우
     if (user->room) {
-        strcat(user_list, "[Server] Users in room ");
-        strcat(user_list, user->room->room_name);
-        strcat(user_list, ": ");
+        len += snprintf(user_list + len, sizeof(user_list) - len, "[Server] Users in room %s: ", user->room->room_name);
 
         pthread_mutex_lock(&g_rooms_mutex);
         User *member = user->room->members[0];
-        // 대화방 참여자 목록을 순회하며 사용자 ID 전송
         while (member) {
-            strcat(user_list, member->id);
-            if (member->room_user_next) {
-                strcat(user_list, ", ");
-            }
+            size_t rem = sizeof(user_list) - len;
+            if (rem <= 1) break;
+            len += snprintf(user_list + len, rem, "%s%s", member->id, member->room_user_next ? ", " : "");
             member = member->room_user_next;
         }
         pthread_mutex_unlock(&g_rooms_mutex);
     } else {
-        // 대화방에 참여 중이지 않은 경우 (로비)
-        strcat(user_list, "[Server] Connected users: ");
+        len += snprintf(user_list + len, sizeof(user_list) - len, "[Server] Connected users: ");
 
         pthread_mutex_lock(&g_users_mutex);
         User *iter = g_users;
         while (iter) {
-            strcat(user_list, iter->id);
-            if (iter->next) {
-                strcat(user_list, ", ");
-            }
+            size_t rem = sizeof(user_list) - len;
+            if (rem <= 1) break;
+            len += snprintf(user_list + len, rem, "%s%s", iter->id, iter->next ? ", " : "");
             iter = iter->next;
         }
         pthread_mutex_unlock(&g_users_mutex);
     }
-    
-    pthread_mutex_lock(&g_db_mutex);
-    //db_get_all_rooms(); // 데이터베이스에서 모든 대화방 정보 가져오기
-    db_recent_user(10); // 최근 사용자 목록 업데이트
-    pthread_mutex_unlock(&g_db_mutex);
-    
-    strcat(user_list, "\n");
+
+    len += snprintf(user_list + len, sizeof(user_list) - len, "\n");
+
+    printf("[DEBUG] cmd_users: about to call safe_send\n");
+    fflush(stdout); // 버퍼 비우기
     safe_send(user->sock, user_list);
+    printf("[DEBUG] cmd_users: after safe_send\n");
+    fflush(stdout); // 버퍼 비우기
 }
 
 // typedef에서 warning: type allocation error 방지
