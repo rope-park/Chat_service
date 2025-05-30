@@ -165,6 +165,17 @@ void server_quit(void) {
 }
 
 // ==== 메시지 전송 ====
+unsigned char calculate_checksum(const unsigned char *header_and_data, size_t length) {
+    unsigned char cs = 0; // 체크섬 초기화
+    for (size_t i = 0; i < length; i++) {
+        cs ^= header_and_data[i]; // XOR 연산으로 체크섬 계산
+    }
+    return cs; // 계산된 체크섬 반환
+}
+
+ssize_t send_packet(int sock, uint16_t magic, uint8_t type, const void *data, uint16_t data_len);
+ssize_t recv_all(int sock, void *buf, size_t len);
+
 // 안전한 메시지 전송 함수 - 소켓 번호와 메시지 포인터를 인자로 받음
 ssize_t safe_send(int sock, const char *msg) {
     printf("[DEBUG] safe_send: sock=%d, msg=%s\n", sock, msg ? msg : "(null)");
