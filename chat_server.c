@@ -187,7 +187,7 @@ ssize_t recv_all(int sock, void *buf, size_t len) {
     return total_received; // 총 수신된 바이트 수 반환
 }
 
-
+// 패킷 전송 함수 - 소켓 번호, 매직 넘버, 패킷 타입, 데이터 포인터, 데이터 길이를 인자로 받음
 ssize_t send_packet(int sock, uint16_t magic, uint8_t type, const void *data, uint16_t data_len) {
     if (sock < 0) return -1; // 유효하지 않은 소켓 번호
 
@@ -217,7 +217,7 @@ ssize_t send_packet(int sock, uint16_t magic, uint8_t type, const void *data, ui
     ssize_t bytes_left = total_packet_size;
 
     while (bytes_left > 0) {
-        ssize_t sent = send(sock, packet_buffer + total_sent, bytes_left, 0);
+        ssize_t sent = send(sock, packet_buffer + total_sent, bytes_left, 0); // 패킷 전송
         if (sent < 0) {
             if (errno == EINTR) continue; // 인터럽트된 경우 재시도
             perror("send error");
