@@ -1,18 +1,3 @@
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include <fcntl.h>
-#include <sys/epoll.h>
-#include <pthread.h>
-#include <errno.h>
-#include <stdarg.h>
-#include <sys/time.h>
-#include <time.h>
-#include <ctype.h>
 #include "chat_server.h"
 #include "db_helper.h" // 데이터베이스 관련 함수들
 
@@ -1182,8 +1167,10 @@ void cmd_create(User *creator, char *room_name) {
     // 대화방 이름 중복 체크
     pthread_mutex_lock(&g_rooms_mutex);
     Room *existing_room_check = find_room_unlocked(room_name);
-    if (existing_room_check != NULL) {
-        pthread_mutex_unlock(&g_rooms_mutex);
+    pthread_mutex_unlock(&g_rooms_mutex);
+
+    // 이미 존재하는 대화방 이름인 경우
+    if (existing_room_check != NULL || db_room_name_exists(room_name)) {
         char error_msg[BUFFER_SIZE];
         snprintf(error_msg, sizeof(error_msg), "[Server] Room name '%s' already exists.\n", room_name);
         safe_send(creator->sock, error_msg);
@@ -1208,16 +1195,23 @@ void cmd_create(User *creator, char *room_name) {
     memset(new_room->members, 0, sizeof(new_room->members));
     new_room->manager = creator;
     printf("[DEBUG] cmd_create: new_room->manager: %p, id=%s\n", (void*)new_room->manager ? new_room->manager->id: "(null)", new_room->manager ? new_room->manager->id : "(null)");
-    new_room->member_count = 1;
+    new_room->member_count = 0;
     new_room->next = NULL;
     new_room->prev = NULL;
 
     // 대화방 리스트에 추가
     list_add_room_unlocked(new_room);
-    // 대화방에 사용자 추가
     room_add_member_unlocked(new_room, creator);
-    db_create_room(new_room); // 데이터베이스에 대화방 정보 저장
-    db_add_user_to_room(new_room, creator); // 데이터베이스에 사용자 추가
+    if (!db_create_room(new_room)) { // db_create_room이 실패하면 0 반환하도록 수정
+        // 롤백
+        room_remove_member_unlocked(new_room, creator);
+        list_remove_room_unlocked(new_room);
+        free(new_room);
+        pthread_mutex_unlock(&g_rooms_mutex);
+        safe_send(creator->sock, "[Server] Failed to create room (DB error).\n");
+        return;
+    }
+    db_add_user_to_room(new_room, creator);
     pthread_mutex_unlock(&g_rooms_mutex);
 
     printf("[INFO] User %s created room '%s' (ID: %u) and joined.\n", creator->id, new_room->room_name, new_room->no);
@@ -1489,6 +1483,12 @@ void usage_help(User *user) {
 // ================================== 메인 함수 ================================
 int main() {
     db_init(); // 데이터베이스 초기화
+    db_reset_all_user_connected(); // 모든 사용자 연결 상태 초기화
+    g_next_room_no = db_get_max_room_no() + 1; // 다음 대화방 번호 초기화
+    if (g_next_room_no == 0) {
+        g_next_room_no = 1; // 최소값 1로 설정
+    }
+    printf("[INFO] Next room number initialized to %u\n", g_next_room_no);
 
     int ns;
     struct sockaddr_in sin, cli;
