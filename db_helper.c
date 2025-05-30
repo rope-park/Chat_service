@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <sqlite3.h>
+#include <unistd.h>
 #include "db_helper.h"
 
 sqlite3 *db = NULL;
@@ -15,6 +16,7 @@ void db_init() {
         fprintf(stderr, "Opened database successfully\n");
     }
     sqlite3_exec(db, "PRAGMA foreign_keys = ON;", NULL, NULL, NULL); // 외래 키 제약 조건 활성화
+    sqlite3_exec(db, "PRAGMA journal_mode = WAL;", NULL, NULL, NULL); // Write-Ahead Logging 모드 설정(동시 write)
     sqlite3_busy_timeout(db, 5000); // 데이터베이스 잠금 대기 시간 설정 (5초)
 
     // 데이터베이스 테이블 생성
@@ -29,12 +31,12 @@ void db_init() {
     const char *sql_room_tbl =
         "CREATE TABLE IF NOT EXISTS room ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "room_no INTEGER UNIQUE, "
+        "room_no INTEGER, "
         "room_name TEXT NOT NULL UNIQUE, "
         "manager_id TEXT, "
         "member_count INTEGER DEFAULT 0, "
         "created_time DATETIME DEFAULT (DATETIME('NOW', 'LOCALTIME')), "
-        "FOREIGN KEY(manager_id) REFERENCES user(id));";
+        "FOREIGN KEY(manager_id) REFERENCES user(user_id));";
 
     const char *sql_message_tbl =
         "CREATE TABLE IF NOT EXISTS message ("
@@ -118,6 +120,16 @@ void db_insert_user(User *user) {
     sqlite3_bind_int(stmt, 2, user->sock);
 
     rc = sqlite3_step(stmt);
+    int retry = 0, max_retry = 5;
+    do {
+        rc = sqlite3_step(stmt);
+        if (rc == SQLITE_BUSY || rc == SQLITE_LOCKED) {
+            usleep(100 * 1000); // 100ms 대기
+            retry++;
+        } else {
+            break;
+        }
+    } while (retry < max_retry);
     if (rc != SQLITE_DONE) {
         fprintf(stderr, "SQL insert user error: %s\n", sqlite3_errmsg(db));
     } else {
@@ -293,17 +305,20 @@ int db_check_user_id(const char *user_id) {
         "SELECT 1 FROM user WHERE user_id = ?;";
     sqlite3_stmt *stmt;
     int rc =  sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    if (rc != SQLITE_OK) {
-        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
-        pthread_mutex_unlock(&g_db_mutex);
-        return 0; // 오류 발생
-    }
-    sqlite3_bind_text(stmt, 1, user_id, -1, SQLITE_STATIC);
-    int exists = (sqlite3_step(stmt) == SQLITE_ROW) ? 1 : 0; // 존재 여부 반환
-    if (exists != SQLITE_DONE && exists != SQLITE_ROW) {
-        fprintf(stderr, "SQL check user_id error: %s\n", sqlite3_errmsg(db));
+    int exists = 0;
+    if (rc == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, user_id, -1, SQLITE_STATIC);
+        // 모든 row를 소모
+        while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+            exists = 1;
+        }
+        if (rc != SQLITE_DONE && rc != SQLITE_ROW) {
+            fprintf(stderr, "SQL check user_id error: %s\n", sqlite3_errmsg(db));
+        } else {
+            printf("[DB] User ID '%s' exists: %d\n", user_id, exists);
+        }
     } else {
-        printf("[DB] User ID '%s' exists: %d\n", user_id, exists == SQLITE_ROW);
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
     }
     sqlite3_finalize(stmt);
     pthread_mutex_unlock(&g_db_mutex);
@@ -318,26 +333,21 @@ int db_is_sock_connected(int sock) {
         "SELECT 1 FROM user WHERE sock_no = ? AND connected = 1;";
     sqlite3_stmt *stmt;
     int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    int exists = 0; // 초기값 설정
-    if (rc != SQLITE_OK) {
-        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
-        pthread_mutex_unlock(&g_db_mutex);
-        return 0; // 오류 발생
-    }
+    int exists = 0;
     if (rc == SQLITE_OK) {
         sqlite3_bind_int(stmt, 1, sock);
-        exists = (sqlite3_step(stmt) == SQLITE_ROW) ? 1 : 0; // 존재 여부 반환
+        // 모든 row를 소모
+        while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+            exists = 1;
+            // row가 여러 개여도 exists=1만 체크
+        }
+        if (rc != SQLITE_DONE && rc != SQLITE_ROW) {
+            fprintf(stderr, "SQL check sock connected error: %s\n", sqlite3_errmsg(db));
+        }
     }
-
-    if (exists != SQLITE_DONE && exists != SQLITE_ROW) {
-        fprintf(stderr, "SQL check sock connected error: %s\n", sqlite3_errmsg(db));
-    } else {
-        printf("[DB] Socket %d connected status exists: %d\n", sock, exists == SQLITE_ROW);
-    }
-
     sqlite3_finalize(stmt);
     pthread_mutex_unlock(&g_db_mutex);
-    return exists; // 존재 여부 반환
+    return exists;
 }
 
 // 최근 접속 사용자 목록 가져오기 함수 - 최근 접속한 사용자 목록을 가져옴
@@ -373,38 +383,66 @@ void db_recent_user(int limit) {
 
 }
 
+// 모든 사용자 연결 상태 초기화 함수 - 모든 사용자의 연결 상태를 0으로 초기화
+void db_reset_all_user_connected() {
+    pthread_mutex_lock(&g_db_mutex);
+
+    const char *sql =
+        "UPDATE user SET connected = 0;";
+    char *err_msg = NULL;
+    int rc = sqlite3_exec(db, sql, 0, 0, &err_msg);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL reset all user connected error: %s\n", sqlite3_errmsg(db));
+        sqlite3_free(err_msg);
+    } else {
+        printf("[DB] All users' connected status reset to 0 successfully\n");
+    }
+    pthread_mutex_unlock(&g_db_mutex);
+}
+
 // ======= 대화방 관련 함수 ========
 // 대화방 생성 함수 - 대화방 정보를 데이터베이스에 삽입
-void db_create_room(Room *room) {
-    if (!room || !room->room_name[0] == '\0' || !room->manager) {
+int db_create_room(Room *room) {
+    printf("[DEBUG] db_create_room: room_no=%u, room_name='%s', manager=%p, manager_id='%s'\n",
+           room ? room->no : 0, room ? room->room_name : "(null)",
+           room ? (void*)room->manager : NULL,
+           (room && room->manager) ? room->manager->id : "(null)");
+    if (!room || room->room_name[0] == '\0' || !room->manager || room->manager->id[0] == '\0') {
         fprintf(stderr, "Invalid room or manager info\n");
-        return;
-    }
+        return 0; // 실패
+        }
+
+    printf("[DEBUG] db_create_room: room_no=%u, room_name='%s', manager_id='%s'\n",
+           room->no, room->room_name, room->manager->id);
 
     pthread_mutex_lock(&g_db_mutex);
 
     const char *sql =
         "INSERT INTO room (room_no, room_name, manager_id, member_count) "
-        "VALUES (?, ?, ?, 1);";
+        "VALUES (?, ?, ?, 0);";
 
     sqlite3_stmt *stmt;
     int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
         fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
         pthread_mutex_unlock(&g_db_mutex);
-        return;
+        return 0; // 실패
     }
     sqlite3_bind_int(stmt, 1, room->no);
     sqlite3_bind_text(stmt, 2, room->room_name, -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 3, room->manager->id, -1, SQLITE_STATIC);
     rc = sqlite3_step(stmt);
+    int success = 0;
     if (rc != SQLITE_DONE) {
         fprintf(stderr, "SQL create room error: %s\n", sqlite3_errmsg(db));
+        success = 0;
     } else {
         printf("[DB] Room '%s' (room_no=%u) created successfully\n", room->room_name, room->no);
+        success = 1;
     }
     sqlite3_finalize(stmt);
     pthread_mutex_unlock(&g_db_mutex);
+    return success;
 }
 
 // 대화방 삭제 함수 - 대화방 정보를 데이터베이스에서 삭제
@@ -534,7 +572,9 @@ void db_update_room_member_count(Room *room) {
 
 // 대화방에 사용자 추가 함수 - 대화방에 사용자를 추가
 void db_add_user_to_room(Room *room, User *user) {
-    if (!room || !user || !user->id[0] == '\0') {
+    printf("[DEBUG] db_add_user_to_room: room_no=%u, user_id='%s'\n",
+           room ? room->no : 0, user ? user->id : "(null)");
+    if (!room || !user || user->id[0] == '\0') {
         fprintf(stderr, "Invalid room or user info\n");
         return;
     }
@@ -560,11 +600,12 @@ void db_add_user_to_room(Room *room, User *user) {
         fprintf(stderr, "SQL add user to room error: %s\n", sqlite3_errmsg(db));
     } else {
         printf("[DB] User '%s' added to room '%s' successfully\n", user->id, room->room_name);
-        db_update_room_member_count(room); // 멤버 수 업데이트
     }
     
     sqlite3_finalize(stmt);
     pthread_mutex_unlock(&g_db_mutex);
+
+    db_update_room_member_count(room); // 멤버 수 업데이트
 }
 
 // 대화방에서 사용자 제거 함수 - 대화방에서 사용자를 제거
@@ -722,6 +763,66 @@ void db_get_room_by_no(unsigned int room_no) {
     pthread_mutex_unlock(&g_db_mutex);
 }
 
+// 최대 대화방 번호 가져오기 함수 - 데이터베이스에서 현재 최대 대화방 번호를 가져옴
+unsigned int db_get_max_room_no() {
+    pthread_mutex_lock(&g_db_mutex);
+
+    const char *sql =
+        "SELECT MAX(room_no) FROM room;";
+    
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    unsigned int max_room_no = 0;
+    if (rc == SQLITE_OK) {
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            max_room_no = sqlite3_column_int(stmt, 0);
+        }
+        if (max_room_no == 0) {
+            fprintf(stderr, "No rooms found in the database.\n");
+        } else {
+            printf("[DB] Max room_no: %u\n", max_room_no);
+        }
+    } else {
+        fprintf(stderr, "SQL get max room no error: %s\n", sqlite3_errmsg(db));
+    }    
+    sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
+    return max_room_no;
+}
+
+// 대화방 이름 존재 여부 확인 함수 - 특정 대화방 이름이 데이터베이스에 존재하는지 확인
+int db_room_name_exists(const char *room_name) {
+    if (!room_name || strlen(room_name) == 0) {
+        fprintf(stderr, "Invalid room_name\n");
+        return 0; // 유효하지 않은 이름
+    }
+
+    pthread_mutex_lock(&g_db_mutex);
+
+    const char *sql =
+        "SELECT 1 FROM room WHERE room_name = ?;";
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    int exists = 0;
+    if (rc == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, room_name, -1, SQLITE_STATIC);
+        while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+            exists = 1;
+        }
+        if (rc != SQLITE_DONE && rc != SQLITE_ROW) {
+            fprintf(stderr, "SQL check room name error: %s\n", sqlite3_errmsg(db));
+        } else {
+            printf("[DB] Room name '%s' exists: %d\n", room_name, exists);
+        }
+    } else {
+        fprintf(stderr, "SQL prepare error: %s\n", sqlite3_errmsg(db));
+    }
+    
+    sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&g_db_mutex);
+    return exists;
+}
+
 // 모든 대화방 목록 가져오기 함수 - 데이터베이스에서 모든 대화방 정보를 가져옴
 void db_get_all_rooms() {
     pthread_mutex_lock(&g_db_mutex);
@@ -738,19 +839,18 @@ void db_get_all_rooms() {
         return;
     }
 
-    printf("%4s%20s\t%12s%8s\t%s\n", "ROOM ID", "ROOM NAME", "CREATED TIME", "#USER", "MEMBER");
+    printf("%7s%32s\t%s\t%10s\t%20s\n", "ROOM NO", "ROOM NAME", "#USER", "CREATED TIME",  "MANAGER");
     printf("==============================================================================================================\n");
-
     
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         unsigned int room_no = sqlite3_column_int(stmt, 0);
         const char *room_name = (const char *)sqlite3_column_text(stmt, 1);
-        const char *manager_id = (const char *)sqlite3_column_text(stmt, 2);
-        int member_count = sqlite3_column_int(stmt, 3);
-        const char *created_time = (const char *)sqlite3_column_text(stmt, 4);
+        int member_count = sqlite3_column_int(stmt, 2);
+        const char *created_time = (const char *)sqlite3_column_text(stmt, 3);
+        const char *manager_id = (const char *)sqlite3_column_text(stmt, 4);
         
-        printf("%4u%20s\t%12s%8d\t%s\n",
-               room_no, room_name ? room_name : "", manager_id ? manager_id : "", member_count, created_time);
+        printf("%7u%32s\t%d\t%10s\t%20s\n",
+               room_no, room_name ? room_name : "", member_count, created_time, manager_id ? manager_id : "");
     }
     
     sqlite3_finalize(stmt);
