@@ -842,7 +842,46 @@ void *client_process(void *args) {
         // 패킷 타입 검사
         switch (pk_header.type) {
             case PACKET_TYPE_MESSAGE:
-                // 메시지 처리 (생략)
+                if (!user->room) {
+                    char error_msg[] = "[Server] You are not in a chatroom. Please join or create a room first.\n";
+                    send_packet(
+                        user->sock,
+                        RES_MAGIC,
+                        PACKET_TYPE_ERROR,
+                        error_msg,
+                        (uint16_t)strlen(error_msg) + 1
+                    );
+                    break;
+                }
+                if (data_buffer || pk_header.data_len == 0) {
+                    char error_msg[] = "[Server] Empty message cannot be sent.\n";
+                    send_packet(
+                        user->sock,
+                        RES_MAGIC,
+                        PACKET_TYPE_ERROR,
+                        error_msg,
+                        (uint16_t)strlen(error_msg) + 1
+                    );
+                }
+
+                db_insert_message(user->room, user, (const char *)data_buffer); // 메시지 데이터베이스에 저장
+
+                // 메시지 포맷팅
+                char msg[BUFFER_SIZE];
+                int n = snprintf(msg, sizeof(msg), "[%s] %s\n", user->id, (int)pk_header.data_len, (char *)data_buffer);
+
+                // 대화방 참여자에게 메시지 브로드캐스트
+                broadcast_server_message_to_room(user->room, user, msg);
+                printf("[DEBUG] User %s sent message in room %s: %s\n", user->id, user->room->room_name, (char *)data_buffer);
+                fflush(stdout); // 버퍼 비우기
+
+                send_packet(
+                    user->sock,
+                    RES_MAGIC,
+                    PACKET_TYPE_MESSAGE,
+                    msg,
+                    (uint16_t)strlen(msg)
+                );
                 break;
             case PACKET_TYPE_SET_USER_ID:
                 // ID 변경 처리 (생략)
@@ -1013,51 +1052,6 @@ void process_server_cmd(void) {
         return;
     }
     printf("> ");
-    fflush(stdout); // 버퍼 비우기
-}
-
-// 텍스트 명령어 파싱 및 실행 함수
-void parse_and_execute_text_command(User *user, const char *buf) {
-    if (!buf || buf[0] != '/') {
-        safe_send(user->sock, "[Server] Invalid command. Commands start with '/'.\n");
-        return; 
-    }
-
-    // ID가 비어있으면 사용자 ID가 설정되지 않은 상태이므로 경고 메시지 전송
-    if (user->id[0] == '\0') {
-        safe_send(user->sock, "[Server] No command entered. Type '/help' for available commands.\n");
-        return;
-    }
-
-    char cmd_buf[BUFFER_SIZE];
-    strncpy(cmd_buf, buf + 1, sizeof(cmd_buf) - 1); // '/' 이후의 문자열 복사
-    cmd_buf[sizeof(cmd_buf) - 1] = '\0'; // 문자열 종료
-
-    char *cmd = strtok(cmd_buf, " \t\r\n"); // 첫 번째 토큰을 명령어로 사용
-    char *args = strtok(NULL, ""); // 나머지 토큰을 인자로 사용
-
-    if (!cmd) {
-        safe_send(user->sock, "[Server] No command entered. Type '/help' for available commands.\n");
-        return;
-    }
-
-    char full_cmd[BUFFER_SIZE];
-    snprintf(full_cmd, sizeof(full_cmd), "/%s", cmd); // 명령어를 전체 명령어로 설정
-
-    for (int i = 0; cmd_tbl_client[i].cmd != NULL; i++) {
-        if (strcmp(full_cmd, cmd_tbl_client[i].cmd) == 0) {
-            // 해당 명령어가 존재하는 경우
-            if (cmd_tbl_client[i].cmd_func) {
-                cmd_tbl_client[i].cmd_func(user, args); // 사용자와 인자를 전달하여 함수 호출
-                return;
-            } else {
-                safe_send(user->sock, "[Server] Command not implemented yet.\n");
-            }
-            return;
-        }
-    }
-    safe_send(user->sock, "[Server] Unknown command. Type '/help' for available commands.\n");
-    printf("[DEBUG] Unknown command: %s from user %s (sock=%d)\n", cmd, user->id, user->sock);
     fflush(stdout); // 버퍼 비우기
 }
 
