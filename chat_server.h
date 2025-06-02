@@ -7,11 +7,61 @@
 #include <pthread.h>
 #include <stdarg.h>
 #include <sys/types.h>
+#include <sys/un.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <sys/epoll.h>
+#include <errno.h>
+#include <sys/time.h>
+#include <time.h>
 
+// 프로토콜 정의
+#define REQ_MAGIC 0x5a5a
+#define RES_MAGIC 0xa5a5
+
+// 패킷 타입 열거형
+typedef enum {
+    PACKET_TYPE_MESSAGE = 0,        // C->S: 채팅 메시지, S->C: 브로드캐스트 채팅 메시지 또는 서버 텍스트 메시지
+    PACKET_TYPE_SET_USER_ID = 1,   // C->S: 새 사용자 ID 요청, S->C: 결과 / 초기 할당
+    PACKET_TYPE_ID_CHANGE = 2,      // C->S: 사용자 ID 변경 요청, S->C: 결과
+    PACKET_TYPE_CREATE_ROOM = 3,    // C->S: 요청, S->C: 결과
+    PACKET_TYPE_JOIN_ROOM = 4,      // C->S: 요청, S->C: 결과
+    PACKET_TYPE_LEAVE_ROOM = 5,     // C->S: 요청, S->C: 결과
+    PACKET_TYPE_LIST_ROOMS = 6,     // C->S: 요청, S->C: 대화방 목록 데이터
+    PACKET_TYPE_LIST_USERS = 7,     // C->S: 요청 (데이터는 비어있거나 room_id), S->C: 사용자 목록 데이터
+    PACKET_TYPE_KICK_USER = 8, // C->S: 대화방에서 사용자 추방 요청, S->C: 결과
+    PACKET_TYPE_CHANGE_ROOM_NAME = 9, // C->S: 대화방 이름 변경 요청, S->C: 결과
+    PACKET_TYPE_CHANGE_ROOM_MANAGER = 10, // C->S: 대화방 관리자 변경 요청, S->C: 결과
+    PACKET_TYPE_DELETE_ACCOUNT = 11, // C->S: 사용자 계정 삭제 요청, S->C: 결과
+    PACKET_TYPE_DELETE_MESSAGE = 12, // C->S: 메시지 삭제 요청, S->C: 결과
+    PACKET_TYPE_HELP  = 13, // C->S: 도움말 요청, S->C: 도움말 메시지
+    PACKET_TYPE_USAGE = 14,
+    PACKET_TYPE_ERROR = 15, // C->S: 에러 메시지, S->C: 에러 메시지
+    PACKET_TYPE_QUIT = 16, // C->S: 종료 요청, S->C: 종료 메시지
+    PACKET_TYPE_SERVER_NOTICE =100, // S->C: 서버 공지 메시지
+} PacketType;
+
+#pragma pack(push, 1) // 패딩 없이 구조체 정렬
+typedef struct {
+    uint16_t magic;        // 패킷 매직 넘버
+    uint8_t type;          // 패킷 타입
+    uint16_t data_len;     // 데이터 길이
+} PacketHeader;
+
+typedef struct {
+    uint32_t no;           // 대화방 ID
+    char name[32];         // 대화방 이름
+    uint16_t member_count; // 멤버 수
+} SerializableRoomInfo;
+#pragma pack(pop) // 원래 구조체 정렬로 되돌리기
+
+
+#define HEADER_SIZE     sizeof(PacketHeader)
 #define PORTNUM         9000
 #define MAX_CLIENT      100
 #define BUFFER_SIZE     1024
-
 
 // User 구조체
 typedef struct User {
@@ -37,6 +87,7 @@ typedef struct Room {
     time_t created_time;                // 생성된 시간
 } Room;
 
+
 // ================== 전역 변수 ===================
 extern User *g_users;               // 사용자 목록
 extern Room *g_rooms;               // 대화방 목록
@@ -61,9 +112,13 @@ void server_room_info_wrapper(void);                // room_info 명령 래퍼
 void server_room(void);                             // rooms 명령: 대화방 목록
 void server_quit(void);                             // quit 명령: 서버 종료
 // ==== 메시지 전송 ====
+unsigned char calculate_checksum(const unsigned char *header_and_data, size_t length);
+ssize_t send_packet(int sock, uint16_t magic, uint8_t type, const void *data, uint16_t data_len);
+ssize_t recv_all(int sock, void *buf, size_t len);
 ssize_t safe_send(int sock, const char *msg);
-void broadcast_to_room(Room *room, User *sender, const char *format, ...);
 void broadcast_to_all(User *sender, const char *format, ...);
+void broadcast_to_room(Room *room, User *sender, const char *format, ...);
+void broadcast_server_message_to_room(Room *room, User *sender, const char *message_text);
 // ==== 리스트 및 방 관리 ====
 void list_add_client_unlocked(User *user);
 void list_remove_client_unlocked(User *user);
@@ -89,13 +144,24 @@ void list_remove_room(Room *room);
 Room *find_room(const char *name);
 Room *find_room_by_id(unsigned int id);
 
+int is_room_name_exists(const char *name);
+int is_user_id_exists(const char *id);
 void room_add_member(Room *room, User *user);
 void room_remove_member(Room *room, User *user);
 void destroy_room_if_empty(Room *room);
+
+void add_user(User *user);                     // 사용자 추가
+void remove_user(User *user);                  // 사용자 제거
+void add_room(Room *room);                     // 대화방 추가
+void remove_room(Room *room);                  // 대화방 제거
+void add_user_to_room(Room *room, User *user); // 대화방 참여자 추가
+void remove_user_from_room(Room *room, User *user); // 대화방 참여자 제거
+
 // ==== 세션 처리 ====
 void *client_process(void *args);
 void process_server_cmd(void);
-
+void parse_and_execute_text_command(User *user, const char *buf);
+void cleanup_client_session(User *user);
 // ======== 클라이언트부 ========
 // ==== CLI ====
 void cmd_users(User *user);
