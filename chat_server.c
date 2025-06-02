@@ -1734,24 +1734,29 @@ void cmd_delete_account(User *user) {
     printf("[DEBUG] cmd_delete_account called by %s, sock=%d\n", user->id, user->sock);
     fflush(stdout); // 버퍼 비우기
 
+    // 사용자에게 계정 삭제 확인 메시지 전송
+    if (!user->pending_delete) {
+        user->pending_delete = 1; // 계정 삭제 요청 플래그로 변경
+        char confirm_msg[] = "[Server] Are you sure you want to delete your account? Type '/delete_account' again to confirm.\n";
+        send_packet(
+            user->sock,
+            RES_MAGIC,
+            PACKET_TYPE_DELETE_ACCOUNT,
+            confirm_msg,
+            (uint16_t)strlen(confirm_msg)
+        );
+        printf("[INFO] Sending account deletion confirmation to user %s (sock=%d)\n", user->id, user->sock);
+        fflush(stdout); // 버퍼 비우기
+        return;
+    }
+
+    // 실제로 계정 삭제 처리
+    user->pending_delete = 0; // 계정 삭제 요청 플래그 초기화
+    
     // 사용자 대화방에서 나가기
     if (user->room) {
         cmd_leave(user);
     }
-
-    // 사용자에게 계정 삭제 확인 메시지 전송
-    char confirm_msg[] = "[Server] Are you sure you want to delete your account? Type '/delete_account' again to confirm.\n";
-    printf("[INFO] Sending account deletion confirmation to user %s (sock=%d)\n", user->id, user->sock);
-    fflush(stdout); // 버퍼 비우기
-    send_packet(
-        user->sock,
-        RES_MAGIC,
-        PACKET_TYPE_DELETE_ACCOUNT,
-        confirm_msg,
-        (uint16_t)strlen(confirm_msg)
-    );
-    
-
 
     remove_user(user); // 메모리+DB 동기화
 

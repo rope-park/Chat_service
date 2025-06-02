@@ -67,6 +67,7 @@ typedef struct {
 typedef struct User {
     int sock;                           // 소켓 번호
     char id[20];                        // 사용자 ID (닉네임)
+    int pending_delete;                 // 계정 삭제 대기 여부
     pthread_t thread;                   // 사용자별 스레드
     struct Room *room;                  // 대화방 포인터
     struct User *next;                  // 다음 사용자 포인터
