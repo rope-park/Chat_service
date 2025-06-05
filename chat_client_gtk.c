@@ -59,14 +59,27 @@ static gboolean set_widget_sensitive_idle(gpointer user_data) {
     return G_SOURCE_REMOVE;
 }
 
+// Send 버튼의 레이블을 "Send"로 설정하는 idle 콜백 - 연결 성공 시 호출됨
+static gboolean set_send_button_label_send(gpointer data) {
+    (void)data; // 사용하지 않는 인자
+    gtk_button_set_label(GTK_BUTTON(send_button), "Send");
+    return G_SOURCE_REMOVE;
+}
+
 // 서버로부터 메시지를 수신하는 스레드 함수
-static void *receive_messages(void *arg) {
+static void *receive_messages() {
     char buffer[BUFFER_SIZE];
     ssize_t bytes_received;
 
     while ((bytes_received = recv(sock, buffer, BUFFER_SIZE - 1, 0)) > 0) {
         buffer[bytes_received] = '\0';
         g_idle_add(append_message_to_view_idle, g_strdup(buffer));
+
+        if (strstr(buffer, "[Server] Welcome") != NULL) {
+            g_idle_add((GSourceFunc)set_send_button_label_send, NULL);
+            gtk_widget_set_sensitive(room_create_button, TRUE);
+            gtk_widget_set_sensitive(room_create_entry, TRUE);
+        }
     }
 
     if (bytes_received == 0) {
@@ -86,6 +99,14 @@ static void *receive_messages(void *arg) {
     conn_data->widget = connect_button; conn_data->sensitive = TRUE;
     g_idle_add(set_widget_sensitive_idle, conn_data);
 
+    // receive_messages()에서 연결 종료 감지 시
+    gtk_widget_set_sensitive(message_entry, FALSE);
+    gtk_widget_set_sensitive(send_button, FALSE);
+    gtk_widget_set_sensitive(room_create_entry, FALSE);
+    gtk_widget_set_sensitive(room_create_button, FALSE);
+    gtk_widget_set_sensitive(connect_button, TRUE);
+    gtk_button_set_label(GTK_BUTTON(send_button), "OK");
+
     if (sock != -1) {
         close(sock);
         sock = -1;
@@ -96,6 +117,9 @@ static void *receive_messages(void *arg) {
 
 // Connect 버튼 클릭 시 호출되는 콜백 함수 - 서버에 연결 시도
 static void on_connect_clicked(GtkWidget *widget, gpointer data) {
+    (void)widget; // 사용하지 않는 인자
+    (void)data; // 사용하지 않는 인자
+
     if (sock != -1) {
         g_idle_add(append_message_to_view_idle, g_strdup("[Client] Already connected or attempting to connect."));
         return;
@@ -136,6 +160,7 @@ static void on_connect_clicked(GtkWidget *widget, gpointer data) {
     gtk_widget_set_sensitive(send_button, TRUE);
     gtk_widget_set_sensitive(message_entry, TRUE);
     gtk_widget_grab_focus(message_entry);
+    gtk_button_set_label(GTK_BUTTON(send_button), "OK");
 
     if (pthread_create(&recv_thread_id, NULL, receive_messages, NULL) != 0) {
         perror("pthread_create for receive_messages");
@@ -149,10 +174,36 @@ static void on_connect_clicked(GtkWidget *widget, gpointer data) {
 
 // Send 버튼 클릭 시 호출되는 콜백 함수 - 메시지 전송
 static void on_send_clicked(GtkWidget *widget, gpointer data) {
+    (void)widget; // 사용하지 않는 인자
+    (void)data; // 사용하지 않는 인자
+
     if (sock < 0) {
         g_idle_add(append_message_to_view_idle, g_strdup("[Client] Not connected to server."));
         return;
     }
+
+    // ID 입력 단계: Send 버튼 라벨이 "OK"인 경우
+    const char *btn_label = gtk_button_get_label(GTK_BUTTON(send_button));
+    if (strcmp(btn_label, "OK") == 0) {
+        const char *id = gtk_entry_get_text(GTK_ENTRY(message_entry));
+        if (!id || strlen(id) == 0) {
+            g_idle_add(append_message_to_view_idle, g_strdup("[Client] Please enter a valid user ID."));
+            return;
+        }
+
+        // ID 비어있지 않으면 서버로 전송
+        char buffer[BUFFER_SIZE];
+        snprintf(buffer, sizeof(buffer), "%s\n", id);
+        if (send(sock, buffer, strlen(buffer), 0) < 0) {
+            perror("send");
+            g_idle_add(append_message_to_view_idle, g_strdup("[Client] Error: Failed to send user ID."));
+        }
+        gtk_entry_set_text(GTK_ENTRY(message_entry), ""); // 메시지 입력 필드 비우기
+        gtk_widget_grab_focus(message_entry); // 메시지 입력 필드에 포커스 설정
+        return;
+    }
+
+    // 채팅 메시지 단계
     const char *message = gtk_entry_get_text(GTK_ENTRY(message_entry));
     if (strlen(message) == 0) return;
 
@@ -169,6 +220,9 @@ static void on_send_clicked(GtkWidget *widget, gpointer data) {
 
 // 창이 닫힐 때 호출되는 콜백 함수 - 소켓 종료 및 스레드 정리
 static void on_window_destroy(GtkWidget *widget, gpointer data) {
+    (void)widget; // 사용하지 않는 인자
+    (void)data; // 사용하지 않는 인자
+
     if (sock != -1) {
         shutdown(sock, SHUT_RDWR); close(sock); sock = -1;
     }
@@ -180,6 +234,9 @@ static void on_window_destroy(GtkWidget *widget, gpointer data) {
 
 // 대화방 생성 버튼 클릭 시 호출되는 콜백 함수 - 대화방 생성 요청
 static void on_create_room_clicked(GtkWidget *widget, gpointer data) {
+    (void)widget; // 사용하지 않는 인자
+    (void)data; // 사용하지 않는 인자
+
     if (sock < 0) {
         g_idle_add(append_message_to_view_idle, g_strdup("[Client] Not connected to server."));
         return;
@@ -206,11 +263,18 @@ static void on_create_room_clicked(GtkWidget *widget, gpointer data) {
 
 // 메인 창 활성화 시 호출되는 함수 - UI 초기화 및 설정
 static void activate(GtkApplication *app, gpointer user_data) {
+    (void)user_data; // 사용하지 않는 인자
+    
+    GtkCssProvider *provider = gtk_css_provider_new();
+    gtk_css_provider_load_from_path(provider, "style.css", NULL); // CSS 파일 로드
+    gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),
+                                              GTK_STYLE_PROVIDER(provider),
+                                              GTK_STYLE_PROVIDER_PRIORITY_USER);
     GtkWidget *grid, *ip_label, *port_label;
 
     window = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window), "Chat Client");
-    gtk_window_set_default_size(GTK_WINDOW(window), 500, 800); 
+    gtk_window_set_default_size(GTK_WINDOW(window), 500, 900); 
     gtk_container_set_border_width(GTK_CONTAINER(window), 10);
     g_signal_connect(window, "destroy", G_CALLBACK(on_window_destroy), NULL); // 창 닫기 시 콜백
 
@@ -232,15 +296,23 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_grid_attach(GTK_GRID(grid), port_entry, 3, 0, 1, 1); // 행 0, 열 3
 
     connect_button = gtk_button_new_with_label("Connect");
+    gtk_widget_set_name(connect_button, "connect_button");
     g_signal_connect(connect_button, "clicked", G_CALLBACK(on_connect_clicked), NULL);
     gtk_grid_attach(GTK_GRID(grid), connect_button, 4, 0, 1, 1); // 행 0, 열 4
 
     scrolled_window = gtk_scrolled_window_new(NULL, NULL);
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled_window), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC); // 스크롤바 자동 표시    gtk_widget_set_vexpand(scrolled_window, TRUE);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled_window), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC); // 스크롤바 자동 표시
+    gtk_widget_set_vexpand(scrolled_window, TRUE);
+    gtk_widget_set_hexpand(scrolled_window, TRUE);
+
     chat_view = gtk_text_view_new();
     gtk_text_view_set_editable(GTK_TEXT_VIEW(chat_view), FALSE);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(chat_view), FALSE);
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(chat_view), GTK_WRAP_WORD_CHAR);
+
+    gtk_widget_set_vexpand(chat_view, TRUE);
+    gtk_widget_set_hexpand(chat_view, TRUE);
+
     gtk_container_add(GTK_CONTAINER(scrolled_window), chat_view);
     gtk_grid_attach(GTK_GRID(grid), scrolled_window, 0, 1, 5, 1); // 행 1, 열 0, 5열 차지
 
@@ -251,8 +323,9 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_widget_set_sensitive(message_entry, FALSE);
 
     send_button = gtk_button_new_with_label("Send");
+    gtk_widget_set_name(send_button, "send_button");
     g_signal_connect(send_button, "clicked", G_CALLBACK(on_send_clicked), NULL);
-    gtk_grid_attach(GTK_GRID(grid), send_button, 4, 2, 1, 1); // 행 2, 열 4
+    gtk_grid_attach(GTK_GRID(grid), send_button, 4, 2, 1, 1); // 행 2, 열 4, 1열 차지
     gtk_widget_set_sensitive(send_button, FALSE);
 
     room_create_entry = gtk_entry_new();
@@ -260,7 +333,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_grid_attach(GTK_GRID(grid), room_create_entry, 0, 3, 4, 1); // 행 3, 열 0, 4열 차지
     
     room_create_button = gtk_button_new_with_label("Create Room");
-    gtk_grid_attach(GTK_GRID(grid), room_create_button, 4, 3, 1, 1); // 행 3, 열 4
+    gtk_grid_attach(GTK_GRID(grid), room_create_button, 4, 3, 1, 1); // 행 3, 열 4, 1열 차지
     g_signal_connect(room_create_button, "clicked", G_CALLBACK(on_create_room_clicked), room_create_entry);
 
     gtk_widget_show_all(window);
